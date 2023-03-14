@@ -162,20 +162,23 @@ class AvIon():
             Uses Atzeni's Equation for Ei0 in ionization potentials,
             and applies to any complex
         '''
-        Etot = self.Ea * np.sum(-self.Qn**2/2/self.n**2 * self.Pn)
-        return Etot
+        self.Etot = self.Ea * np.sum(-self.Qn**2/2/self.n**2 * self.Pn)
+        return
     
-    # def get_statweight(self):
-    #     '''Calculates statistical weight of the given complex.
-    #         Equation from Cowan
+    def get_statweight(self):
+        '''Calculates statistical weight of the given complex with populations self.Pn
+            Equation from Cowan
         
 
-    #     Returns
-    #     -------
-    #     None.
+        Returns
+        -------
+        None.
 
-    #     '''
-                                
+        '''
+        self.statweight = sp.special.comb(2*self.n**2, self.Pn)
+        return 
+        
+        
         
     #### Functions for dense plasma
     def get_gn(self, rho, C=None):

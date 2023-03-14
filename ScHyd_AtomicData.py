@@ -9,6 +9,8 @@ This script generates atomic data from the Screened Hydrogenic Model (v4).
 Isolated atoms are constructed and evaluated for the desired upper state of all
 charge states of a given atom. E.g. for 1-2, the complex will have a vacancy in the 
 1s and various degrees of excitation.
+
+Should be converted to a method to be more flexible / callable
 """
 
 # Python modules
