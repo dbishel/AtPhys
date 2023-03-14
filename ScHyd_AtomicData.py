@@ -45,6 +45,8 @@ Ip, En_0 = get_ionization(ZZ, return_energy_levels=True)
 # Get shell energies and pops associated with all excited configurations of each charge state
 En = {'{0:d}'.format(item): {} for item in range(ZZ)} # Dict of dict: En[Zbar][excitation degree]
 Pn = {'{0:d}'.format(item): {} for item in range(ZZ)} # Dict of dict: En[Zbar][excitation degree]
+gn = {'{0:d}'.format(item): {} for item in range(ZZ)} # Dict of dict: En[Zbar][excitation degree]
+
 for Zbar in range(Zbar_min, ZZ): # Start with neutral, end with H-like
 
     Nele = ZZ - Zbar
@@ -53,6 +55,7 @@ for Zbar in range(Zbar_min, ZZ): # Start with neutral, end with H-like
     for exc in valid_exc_list:
         Enx = [] # list of lists for current charge state and excitation degree
         Pnx = [] # List of lists for current shell populations
+        gnx = [] # List of lists for current shell statistical weights
         fn = 'complexes/fac_{0:d}_{1:d}_{2:d}_lo.txt'.format(Nele,nmax,
                                                                            exc)
         with open(fn, 'r') as file:
@@ -62,14 +65,12 @@ for Zbar in range(Zbar_min, ZZ): # Start with neutral, end with H-like
                 l = file.readline()
                 
                 # Parse shell and population. First number is always shell, second population
-                # p = re.compile('[0-9]+\*[0-9]+')
                 p = re.compile('([0-9]+)\*([0-9]+)')
                 m = re.findall(p,l)
                 
                 # Skip remainder if end-of-file (m is empty)
                 if not m:
-                    continue
-                
+                    continue                
                 
                 # Initiate populations as all 0's
                 Pni = np.zeros(nmax) # populations of current complex
@@ -85,8 +86,11 @@ for Zbar in range(Zbar_min, ZZ): # Start with neutral, end with H-like
                 
                 sh.get_Wn()
                 sh.get_En()
+                sh.get_statweight()
+                
                 Enx.append(sh.En)
                 Pnx.append(Pni)
+                gnx.append(sh.statweight)
                 
                 if vb: # Print if Verbose
                     print('\n----------')
@@ -96,10 +100,13 @@ for Zbar in range(Zbar_min, ZZ): # Start with neutral, end with H-like
                     print('Exc: ', exc)
                     print('FAC: ', l)
                     print('Parse: ', m)
-                    print('Pops: ', Pn)
+                    print('Pops: ', Pni)
+                    print('Stat.weight: ', sh.statweight)
+
                     print(sh.En)
         En['{0:d}'.format(Zbar)]['{0:d}'.format(exc)] = Enx
         Pn['{0:d}'.format(Zbar)]['{0:d}'.format(exc)] = Pnx
+        gn['{0:d}'.format(Zbar)]['{0:d}'.format(exc)] = gnx
         
 
 # %% hnu Plots
@@ -226,24 +233,24 @@ NE = rho0 / (A*mp) * Zbar0 # 1/cm^3, Ne range
 Earrs = []
 excarrs = []
 glists = []
-g = 2*np.arange(1,nmax+1)**2 # Statistical weights of each ScHyd model. See Cowan
+
 Zs = [Zkey for Zkey in list(En.keys()) if list(En[Zkey].keys())] # Keep only calculated charge states
 
 for Zkey in Zs:
-    # Save off energy levels, excitation degree, and stat.weight of each complex
+    # Save off energy levels, excitation degree, and stat.weight of each complex,
+    # grouped by ionization state
     tmpEn = []
     tmpexc = []
-    tmpg = []
+    tmpgn = []
     for exc in list(En[Zkey].keys()):
         N = len(En[Zkey][exc])
         [tmpEn.extend(item) for item in En[Zkey][exc]]
         [tmpexc.extend(exc) for item in range(N)]
+        [tmpgn.extend(item) for item in gn[Zkey][exc]]
         
-        # Construct stat weight for each
-        [tmpg.extend(g) for item in range(N)] # NOTE: INCORRECT. SEE COWAN
     Earrs.append(np.array(tmpEn))
     excarrs.append(np.array(tmpexc))
-    glists.append(tmpg)
+    glists.append(tmpgn)
 
 # Get ionization potentials
 Iplist = [Ip[int(item)] for item in Zs]
@@ -276,70 +283,3 @@ plt.gca().set(xlabel='log10(rho (g/cm^3))',
               title=['Z={0:d}'.format(ZZ),
                       ' exc=',exc_list,
                       'Zbar = {0:s} to {1:s}'.format(Zs[0], Zs[-1])])
-
-# # %% Saha-Boltzmann on shell energies – I think this is wrong...
-
-# # Generate KT, NE vectors
-# Nn, NT = 10, 11 # Number of density, temperature gridpoints
-
-# KT = np.logspace(1.5,3, num=NT) # eV, Temperature range, 
-
-# rho0 = np.logspace(0.5,2, num=Nn) # g/cc
-# Zbar0 = 20 # Estimated dZbar
-# NE = rho0 / (A*mp) * Zbar0 # 1/cm^3, Ne range
-
-# # Parse data for Saha-Boltzmann
-# Earrs = []
-# excarrs = []
-# glists = []
-# g = 2*np.arange(1,nmax+1)**2 # Statistical weights of each ScHyd model. See Cowan
-# Zs = [Zkey for Zkey in list(En.keys()) if list(En[Zkey].keys())] # Keep only calculated charge states
-
-# for Zkey in Zs:
-#     # Save off energy levels, excitation degree, and stat.weight of each set of energy levels
-#     tmpEn = []
-#     tmpexc = []
-#     tmpg = []
-#     for exc in list(En[Zkey].keys()):
-#         N = len(En[Zkey][exc])
-#         [tmpEn.extend(item) for item in En[Zkey][exc]]
-#         [tmpexc.extend(exc) for item in range(N)]
-        
-#         # Construct stat weight for each
-#         [tmpg.extend(g) for item in range(N)] # NOTE: INCORRECT. SEE COWAN
-#     Earrs.append(np.array(tmpEn))
-#     excarrs.append(np.array(tmpexc))
-#     glists.append(tmpg)
-
-# # Get ionization potentials
-# Iplist = [Ip[int(item)] for item in Zs]
-
-# Zbar = np.zeros(shape=[NT,Nn])
-# for idx, items in enumerate(it.product(KT,NE)):
-#     kT, ne = items
-#     i, j = np.unravel_index(idx, shape=(NT,Nn))
-    
-#     # Run Saha, with ne converted to m^-3. 
-#     out = saha(ne, kT, Earrs, glists, Iplist, returns='csd') # Returns: p     
-    
-#     tmp = np.sum(np.arange(int(Zs[0]), int(Zs[-1])+2,) * out)
-#     Zbar[i,j] = tmp
-    
-#     # Run Boltzmann on each charge state
-#     p = []
-#     for Z,Earr,garr in zip(Zs, Earrs, glists):
-#         p.append(boltzmann(Earr, garr, kT))
-
-# rho = NE/Zbar * A * mp # g/cm^3. Ne in 1/cm^3, mp in g
-
-# plt.figure(figsize=[5,3])
-# plt.pcolormesh(np.log10(rho), np.log10(KT), Zbar, shading='nearest',
-#                vmin=int(Zs[0]), vmax=float(Zs[-1]))
-# plt.colorbar()
-
-# plt.gca().set(xlabel='log10(rho (g/cm^3))',
-#               ylabel='log10(T (eV))',
-#               title=['Z={0:d}'.format(ZZ),
-#                       ' exc=',exc_list,
-#                       'Zbar = {0:s} to {1:s}'.format(Zs[0], Zs[-1])])
-
