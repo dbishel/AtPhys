@@ -167,9 +167,8 @@ class AvIon():
     
     def get_statweight(self):
         '''Calculates statistical weight of the given complex with populations self.Pn
-            Equation from Cowan
-        
-
+            Stat. weight of given complex is the product of stat. weight
+            of each shell, np.prod(self.statweight)
         Returns
         -------
         None.
