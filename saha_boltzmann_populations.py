@@ -105,8 +105,8 @@ def saha(ne, kT, Earrs, glists, Iplist, returns='csd'):
     elif returns.lower()=='all':
         return [p, Zbar, n]
 
-def boltzmann(Earr, garr, kT):
-    """ Calculate Boltzmann factor for states of given energy.
+def boltzmann(Earr, garr, kT, normalize=True):
+    """ Calculate Boltzmann populations (or factor) for states of given energy.
     
         Multiplicities are included in partition function (denominator) but not populations
         because oscillator strengths are calculated for individual quantum states
@@ -121,12 +121,19 @@ def boltzmann(Earr, garr, kT):
             Multiplicities of each level. First entry is of ground state
         kT : float
             Temperature (eV)
+        normalize : bool
+            If False, return Boltzmann factors p
+            If True, return fractional populations p / sum(p)
 
     """
     
     dE = Earr - Earr[0] # Energy difference with respect to ground state, including of the ground states
     p = np.exp(-dE/kT) / np.sum(garr * np.exp(-dE/kT)) # Ground state included in sum, i.e. sum starts at s=0, not at s=1 as in notes
-    return p
+    
+    if normalize:
+        return p / np.sum(p) # Normalized Boltzmann
+    else:
+        return p
 
 # %% Main
 if __name__=='__main__':
