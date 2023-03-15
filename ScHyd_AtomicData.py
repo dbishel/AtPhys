@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import scipy as sp
 from matplotlib.lines import Line2D # For custom legend
+from matplotlib.widgets import Button # For widgets
 
 import os                       # Used to e.g. change directory
 import sys                      # Used to put breaks/exits for debugging
@@ -265,7 +266,6 @@ glists = [] # Total statistical weight of each complex, sorted by charge state
 hnuarrs = [] # Transition energy of each 
 
 Zs = [Zkey for Zkey in list(Etot['lo'].keys()) if list(Etot['up'][Zkey].keys())] # Keep only calculated charge states
-
 for Z in Zs:
     # Save off energy levels, excitation degree, and stat.weight of each complex,
     # grouped by ionization state
@@ -285,11 +285,21 @@ for Z in Zs:
     glists.append(tmpgn)
     hnuarrs.append(tmphnu)
 
+# To enable slicing, 0-pad all state-resolved arrays
+# 0 values in glists reslut in 0 contribution to partition functions, 0 effect on Saha-Boltzmann
+# Pad no zeroes at beginning, out to max_length at end: pad_width = [(0, max_length-len(item))]
+max_length = max([len(item) for item in excarrs]) # Longest length array
+Earrs   = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in Earrs]) 
+excarrs = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in excarrs])
+glists  = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in glists])
+hnuarrs = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in hnuarrs])
+
 # Get ionization potentials
 Iplist = [Ip[int(item)] for item in Zs]
 
-Zbar = np.zeros(shape=[NT,Nn])
-pop = np.zeros(shape=[NT,Nn],dtype=object)
+Zbar = np.zeros(shape=[NT,Nn]) # Mean ionization state
+psaha = np.zeros(shape=[NT,Nn,len(Zs)+1]) # Saha charge state populations. Shape T, Ne, Z+1
+pboltz = np.zeros(shape=[NT,Nn,len(Zs), max_length]) # Boltzmann state populations. Shape T, Ne, Z, state
 for idx, items in enumerate(it.product(KT,NE)):
     kT, ne = items
     i, j = np.unravel_index(idx, shape=(NT,Nn))
@@ -297,29 +307,68 @@ for idx, items in enumerate(it.product(KT,NE)):
     #### Saha
     # Run Saha, with ne converted to m^-3. 
     out = saha(ne, kT, Earrs, glists, Iplist, returns='csd') # Returns: p     
+    psaha[i,j] = out # Normalization: np.sum(psaha, axis=-1) should = 1 everywhere
     
-    tmp = np.sum(np.arange(int(Zs[0]), int(Zs[-1])+2,) * out)
-    Zbar[i,j] = tmp
+    # Calculate Zbar
+    Zbar[i,j] = np.sum(np.arange(int(Zs[0]), int(Zs[-1])+2,) * out)
     
-    #### Boltzmann
+    #### Boltzmann – Ne grid
     # Run Boltzmann on each charge state
+    pb = []
+    for Z,Earr,garr in zip(Zs, Earrs, glists):
+        pb.append(boltzmann(Earr, garr, kT, normalize=True))
+    
+    pboltz[i,j] = np.array(pb)
+    
+rho = NE/Zbar * A * mp # g/cm^3. Ne in 1/cm^3, mp in g
+
+#### Regrid in rho
+# Construct regular grids in mass density
+Nrho = 12
+rho_grid = np.logspace(0.5,2, num=Nrho)
+Zbar_rho = [] # Zbar regularly gridded against rho
+psaha_rho = np.zeros(shape=[NT,Nrho,len(Zs)+1]) # Normalization: np.sum(psaha, axis=-1) should = 1 everywhere
+for i,t in enumerate(KT):
+    Zbar_rho.append(np.interp(rho_grid, rho[i], Zbar[i]))
+    for k in range(psaha.shape[-1]):
+        psaha_rho[i,:,k] = np.interp(rho_grid, rho[i], psaha[i,:,k]) 
+Zbar_rho = np.array(Zbar_rho)
+
+#### Boltzmann – rho grid
+# Run Boltzmann on each charge state over rho grid
+pboltz_rho = np.zeros(shape=[NT,Nrho,len(Zs), max_length]) # Shape T, Ne, Z, state
+for idx, items in enumerate(it.product(KT,rho_grid)):
+    kT, __ = items
+    i, j = np.unravel_index(idx, shape=(NT,Nrho))
     p = []
     for Z,Earr,garr in zip(Zs, Earrs, glists):
         p.append(boltzmann(Earr, garr, kT, normalize=True))
-    pop[i,j] = p
-rho = NE/Zbar * A * mp # g/cm^3. Ne in 1/cm^3, mp in g
 
+    pboltz_rho[i,j] = np.array(p)
+
+# Saha-Boltzmann pop of each state
+pstate_rho = pboltz_rho * psaha_rho[Ellipsis,:-1, np.newaxis]  # Shape: T, rho, Z, state
+    
+#### Plots
 # Zbar heatmap
-plt.figure(figsize=[5,3])
-plt.pcolormesh(np.log10(rho), np.log10(KT), Zbar, shading='nearest',
+fig, axs = plt.subplots(2, figsize=[4,5], sharex=True, sharey=True)
+im = axs[0].pcolormesh(np.log10(rho), np.log10(KT), Zbar, shading='nearest',
                vmin=int(Zs[0]), vmax=float(Zs[-1]))
-plt.colorbar()
+plt.colorbar(im, ax=axs[0])
 
-plt.gca().set(xlabel='log10(rho (g/cm^3))',
+im = axs[1].pcolormesh(np.log10(rho_grid), np.log10(KT), Zbar_rho, shading='nearest',
+               vmin=int(Zs[0]), vmax=float(Zs[-1]))
+plt.colorbar(im, ax=axs[1])
+
+fig.suptitle(['Z={0:d}'.format(ZZ),
+        ' exc=',exc_list,
+        'Zbar = {0:s} to {1:s}'.format(Zs[0], Zs[-1])])
+axs[0].set(xlabel='log10(rho (g/cm^3))',
               ylabel='log10(T (eV))',
-              title=['Z={0:d}'.format(ZZ),
-                      ' exc=',exc_list,
-                      'Zbar = {0:s} to {1:s}'.format(Zs[0], Zs[-1])])
+              title='Regular Ne grid')
+axs[1].set(xlabel='log10(rho (g/cm^3))',
+              ylabel='log10(T (eV))',
+              title='Interpolated onto rho grid')
 
 # hnu vs. Zbar, with color equal to Boltzmann population
 # Set color equal to population fraction
@@ -327,22 +376,125 @@ cmap_name = 'rainbow'
 cmap = mpl.cm.get_cmap(cmap_name)
 norm = mpl.colors.Normalize(vmin=0, vmax=1)
 
-fig, ax = plt.subplots(figsize=[4,3])
-for Zbar, exc, hnu_i, p in zip(Zbar_plot, excarrs, hnuarrs, pop):
-
-    plt.scatter(Zbar+exc - 0.1*exc,
-                hnu_i, #'.',
-                color=cmap(p),
-                # alpha=1,
-                label=exc)
+# %%
+#### Visualize populated transitions
+class updateIndex():
+    
+    def __init__(self, scat, colors, Trho, ax=None):
+        self.i = 0
+        self.j = 0
+        self.scat = scat # List of scatterplot objects
+        self.colors = colors
+        self.labels = Trho
         
+        if ax is None:
+            self.ax = plt.gca()
+        else:
+            self.ax = ax
+    
+    def inc_i(self, event):
+        self.i += 1
+        self.i = min(self.i, len(self.labels[0])-1)
+        
+        self.plot()
+
+    def dec_i(self, event):
+        self.i -= 1
+        self.i = max(self.i, 0)
+        
+        self.plot()
+
+    def inc_j(self, event):
+        self.j += 1
+        self.j = min(self.j, len(self.labels[1])-1)
+        
+        self.plot()
+
+    def dec_j(self, event):
+        self.j -= 1
+        self.j = max(self.j, 0)
+        
+        self.plot()
+    
+    def plot(self,):
+        ''' Sets scatter plot colors to current reflect current indices
+        '''
+        # Calculate colors
+        colors = self.colors[self.i, self.j]
+        # colors = ['k']*len(self.scat)
+        
+        ################ FIXX ME ################
+        [s.set_color(c) for s,c in zip(self.scat, colors)] 
+        ################ FIXX ME ################
+        
+        ax.set(title='Te = {0:0.0f} eV, rho = {1:0.1f} g/cc'.format(self.labels[0][self.i],
+                                                                 self.labels[1][self.j]))
+        plt.draw()
+
+# %%
+Tidx, rhoidx=[9,5]
+fig, ax = plt.subplots(figsize=[10,6])
+scat = [] # Keep scatter plots for later
+
+cmap_name = 'rainbow'
+cmap = mpl.cm.get_cmap(cmap_name)
+
+scale = 'log'
+if scale=='log':
+    # Set min/max of colorbar
+    norm = mpl.colors.Normalize(vmin=-6, vmax=0) # Converts value to linearly interpolte [0,1] between bounds
+    
+    # Calculate colorbars of populations
+    colors = cmap(norm(np.log10(pstate_rho)))
+    
+elif scale=='lin':
+    norm = mpl.colors.Normalize(vmin=0, vmax=1)
+    colors = cmap(norm(pstate_rho))
+
+    
+
+for i in range(len(Zbar_plot)):
+    # Parse values for current charge state
+    Z = Zbar_plot[i]
+    exc = excarrs[i]
+    hnu_i = hnuarrs[i]
+    p = pstate_rho[Tidx, rhoidx, i]
+    
+    cond = hnu_i>0
+    scat.append(plt.scatter((Z+exc - 0.1*exc)[cond],
+                        hnu_i[cond],
+                        c=colors[i,Tidx,rhoidx, cond, :],
+                        # norm=norm,
+                        alpha=1,
+                        s=10, # Marker size
+                        label=exc))
+
 # Colorbar
 cax = fig.add_axes([0.2, 0.85, 0.5, 0.05])
-cb = mpl.colorbar.ColorbarBase(ax=cax, cmap=cmap, norm = norm,
+cb = mpl.colorbar.ColorbarBase(ax=cax, cmap=cmap, norm=norm,
                                 orientation='horizontal',)
-cb.set_label('Excitation degree',)
+cb.set_label('lgog10(State population)',)
 plt.tight_layout()
 ax.set(xlabel='Zbar + Excitation degree',
        ylabel='hnu (eV)')
 
+# Buttons to change populations 
+# colors = cmap(pstate_rho) # Shape T, rho, Z, state, RBGA
+# colors = cmap(np.log10(pstate_rho)) # Shape T, rho, Z, state, RBGA
+callback = updateIndex(scat, colors, Trho=[KT,rho_grid])
+
+# Define axes
+axmi = fig.add_axes([0.7, 0.05, 0.1, 0.075]) # Axes minus i
+axpi = fig.add_axes([0.81, 0.05, 0.1, 0.075])
+bpi = Button(axpi, 'T+')
+bpi.on_clicked(callback.inc_i)
+bmi = Button(axmi, 'T-')
+bmi.on_clicked(callback.dec_i)
+
+axmj = fig.add_axes([0.15, 0.05, 0.1, 0.075]) # Axes minus i
+axpj = fig.add_axes([0.26, 0.05, 0.1, 0.075])
+bpj = Button(axpj, 'rho+')
+bpj.on_clicked(callback.inc_j)
+bmj = Button(axmj, 'rho-')
+bmj.on_clicked(callback.dec_j)
 
