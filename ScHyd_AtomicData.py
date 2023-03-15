@@ -531,13 +531,18 @@ bmj.on_clicked(callback.dec_j)
 
 # Histogram population-weighted transition energy - ignore 0-eV trans
 bins = np.linspace(6400, 6800) # Full spectrum
-bins = np.linspace(6515, 6535) # N-like complex
+bins = np.linspace(6515, 6535, num=6) # N-like complex
 
 pop_hist = []
-plt.figure()
 for ii in range(len(KT)):
     pop_hist.append(np.histogram(a=hnuarrs.flatten(),
                             weights=pstate_rho[ii,rhoidx].flatten(),
                             bins=bins)[0])
                     
+plt.figure()
+plt.plot(KT, pop_hist, label=np.arange(len(bins)-1))
+plt.legend()
+
+plt.gca().set(yscale='log')
+
 
