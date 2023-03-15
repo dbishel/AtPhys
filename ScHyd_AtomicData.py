@@ -376,11 +376,39 @@ cmap_name = 'rainbow'
 cmap = mpl.cm.get_cmap(cmap_name)
 norm = mpl.colors.Normalize(vmin=0, vmax=1)
 
-# %%
-#### Visualize populated transitions
+# %% S-B plots
+#### Visualize populated transitions – widget
 class updateIndex():
+    '''Widget for changing 2-D indices governing face-color of scatter-plot points
+    '''
     
     def __init__(self, scat, colors, Trho, ax=None):
+        ''' Widget for changing T,rho indices governing face-color
+            of given scatterplot objects (matplotlib.collections.PathCollection)
+            
+            Use mpl.cm.get_cmap and mpl.colors.Normalize to define colors
+
+        Parameters
+        ----------
+        scat : list
+            Scatter plot objects, plotted on ax. Length (Ns)
+        colors : array
+            Shape [Ni, Nj, Ns, Ndata, 4] array of the face-colors. \n
+            - Ni, Nj are the number of T, rho gridpoints.
+            - Ns is the number of scatter plot objects
+            - Ndata is the (maximm) number of datapoints in each scatterplot
+            - 4 corresonds to the elements of an RGBA color
+        Trho : list
+            Length-2 list of 1-D arrays of T and rho axes.
+        ax : axes object, optional
+            Axes to update title for displaying current T,rho.
+            The default is None, where current axes is used.
+
+        Returns
+        -------
+        None.
+
+        '''
         self.i = 0
         self.j = 0
         self.scat = scat # List of scatterplot objects
@@ -393,24 +421,28 @@ class updateIndex():
             self.ax = ax
     
     def inc_i(self, event):
+        '''Increments i-index and replots'''
         self.i += 1
         self.i = min(self.i, len(self.labels[0])-1)
         
         self.plot()
 
     def dec_i(self, event):
+        '''Decrements i-index and replots'''
         self.i -= 1
         self.i = max(self.i, 0)
         
         self.plot()
 
     def inc_j(self, event):
+        '''Increments j-index and replots'''
         self.j += 1
         self.j = min(self.j, len(self.labels[1])-1)
         
         self.plot()
 
     def dec_j(self, event):
+        '''Decrements j-index and replots'''
         self.j -= 1
         self.j = max(self.j, 0)
         
@@ -419,19 +451,18 @@ class updateIndex():
     def plot(self,):
         ''' Sets scatter plot colors to current reflect current indices
         '''
-        # Calculate colors
+        # Calculate and set colors
         colors = self.colors[self.i, self.j]
-        # colors = ['k']*len(self.scat)
-        
-        ################ FIXX ME ################
         [s.set_color(c) for s,c in zip(self.scat, colors)] 
-        ################ FIXX ME ################
+        self.update_title()
         
-        ax.set(title='Te = {0:0.0f} eV, rho = {1:0.1f} g/cc'.format(self.labels[0][self.i],
-                                                                 self.labels[1][self.j]))
         plt.draw()
+    
+    def update_title(self):
+        self.ax.set(title='Te = {0:0.0f} eV, rho = {1:0.1f} g/cc'.format(self.labels[0][self.i],
+                                                                 self.labels[1][self.j]))
 
-# %%
+
 Tidx, rhoidx=[9,5]
 fig, ax = plt.subplots(figsize=[10,6])
 scat = [] # Keep scatter plots for later
@@ -484,9 +515,9 @@ ax.set(xlabel='Zbar + Excitation degree',
 callback = updateIndex(scat, colors, Trho=[KT,rho_grid])
 
 # Define axes
-axmi = fig.add_axes([0.7, 0.05, 0.1, 0.075]) # Axes minus i
-axpi = fig.add_axes([0.81, 0.05, 0.1, 0.075])
-bpi = Button(axpi, 'T+')
+axmi = fig.add_axes([0.7, 0.05, 0.1, 0.075]) # axmi = "Axes minus i" – i-decrementing axes
+axpi = fig.add_axes([0.81, 0.05, 0.1, 0.075]) # axpi = "Axes plus i" – i-incrementing axes
+bpi = Button(axpi, 'T+') # bpi - i-inrecementing button
 bpi.on_clicked(callback.inc_i)
 bmi = Button(axmi, 'T-')
 bmi.on_clicked(callback.dec_i)
@@ -497,4 +528,16 @@ bpj = Button(axpj, 'rho+')
 bpj.on_clicked(callback.inc_j)
 bmj = Button(axmj, 'rho-')
 bmj.on_clicked(callback.dec_j)
+
+# Histogram population-weighted transition energy - ignore 0-eV trans
+bins = np.linspace(6400, 6800) # Full spectrum
+bins = np.linspace(6515, 6535) # N-like complex
+
+pop_hist = []
+plt.figure()
+for ii in range(len(KT)):
+    pop_hist.append(np.histogram(a=hnuarrs.flatten(),
+                            weights=pstate_rho[ii,rhoidx].flatten(),
+                            bins=bins)[0])
+                    
 
