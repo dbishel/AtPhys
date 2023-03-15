@@ -24,6 +24,7 @@ import os                       # Used to e.g. change directory
 import sys                      # Used to put breaks/exits for debugging
 import re
 import itertools as it
+from copy import deepcopy
 
 from ScHyd import get_ionization, AvIon
 from saha_boltzmann_populations import saha, boltzmann
@@ -42,76 +43,97 @@ mp = 1.67262192e-30 # g, proton mass
 # Ionization potential
 Ip, En_0 = get_ionization(ZZ, return_energy_levels=True)
 
-# Get shell energies and pops associated with all excited configurations of each charge state
-En = {'{0:d}'.format(item): {} for item in range(ZZ)} # Dict of dict: En[Zbar][excitation degree]
-Pn = {'{0:d}'.format(item): {} for item in range(ZZ)} # Dict of dict: En[Zbar][excitation degree]
-gn = {'{0:d}'.format(item): {} for item in range(ZZ)} # Dict of dict: En[Zbar][excitation degree]
+# Get quantities associated with all excited configurations of each charge state
+# Dict of dict of dict: En['up' or'lo'][Zbar][excitation degree]
+dict_base = {'{0:d}'.format(item): {} for item in range(ZZ)}
+En = {item:deepcopy(dict_base) for item in ['up','lo']}  # Shell energies
+Pn = {item:deepcopy(dict_base) for item in ['up','lo']} # Shell populations
+gn = {item:deepcopy(dict_base) for item in ['up','lo']}  # Shell statistical weights
+Etot = {item:deepcopy(dict_base) for item in ['up','lo']}  # Total ion energy – used for transition energies
 
-for Zbar in range(Zbar_min, ZZ): # Start with neutral, end with H-like
+# Dict of dict
+hnu = deepcopy(dict_base) # Transition energy 
 
-    Nele = ZZ - Zbar
-    # Exlcude unphysical excitations, e.g. Li can only be 0- and 1-excited
-    valid_exc_list = [item for item in exc_list if item<(Nele-1)]
-    for exc in valid_exc_list:
-        Enx = [] # list of lists for current charge state and excitation degree
-        Pnx = [] # List of lists for current shell populations
-        gnx = [] # List of lists for current shell statistical weights
-        fn = 'complexes/fac_{0:d}_{1:d}_{2:d}_lo.txt'.format(Nele,nmax,
-                                                                           exc)
-        with open(fn, 'r') as file:
-            l = True
-            while l:
-                # Read each line. Files have one complex per line
-                l = file.readline()
-                
-                # Parse shell and population. First number is always shell, second population
-                p = re.compile('([0-9]+)\*([0-9]+)')
-                m = re.findall(p,l)
-                
-                # Skip remainder if end-of-file (m is empty)
-                if not m:
-                    continue                
-                
-                # Initiate populations as all 0's
-                Pni = np.zeros(nmax) # populations of current complex
-                for shell, pop in np.array(m).astype(int): # Read one shell of the current complex at a time
+for uplo in['up','lo']:
+    for Zbar in range(Zbar_min, ZZ): # Start with neutral, end with H-like
+        Zbar_str = '{0:d}'.format(Zbar)
+
+        Nele = ZZ - Zbar
+        # Exlcude unphysical excitations, e.g. Li can only be 0- and 1-excited
+        valid_exc_list = [item for item in exc_list if item<(Nele-1)]
+        for exc in valid_exc_list:
+            # Save quantities as list of lists for current charge state and excitation degree
+            Enx = [] # Shell energies
+            Pnx = [] # Shell populations
+            gnx = [] # Shell statistical weights
+            Etotx = [] # Total ion energy
+            fn = 'complexes/fac_{0:d}_{1:d}_{2:d}_{3:s}.txt'.format(Nele, nmax,
+                                                                    exc, uplo)
+            with open(fn, 'r') as file:
+                l = True
+                while l:
+                    # Read each line. Files have one complex per line
+                    l = file.readline()
                     
-                    Pni[shell-1] = pop
-                
-                # Get energy levels from Average Ion
-                sh = AvIon(ZZ, Zbar=(ZZ-Nele), nmax=nmax)      
+                    # Parse shell and population. First number is always shell, second population
+                    p = re.compile('([0-9]+)\*([0-9]+)')
+                    m = re.findall(p,l)
+                    
+                    # Skip remainder if end-of-file (m is empty)
+                    if not m:
+                        continue                
+                    
+                    # Initiate populations as all 0's
+                    Pni = np.zeros(nmax) # populations of current complex
+                    for shell, pop in np.array(m).astype(int): # Read one shell of the current complex at a time
+                        
+                        Pni[shell-1] = pop
+                    
+                    # Get energy levels from Average Ion
+                    sh = AvIon(ZZ, Zbar=(ZZ-Nele), nmax=nmax)      
+    
+                    sh.Pn = Pni # Pass Pn manually
+                    sh.get_Qn()
+                    
+                    sh.get_Wn()
+                    sh.get_En()
+                    sh.get_statweight()
+                    sh.get_Etot()
+                    
+                    Enx.append(sh.En)
+                    Pnx.append(Pni)
+                    gnx.append(sh.statweight)
+                    Etotx.append(sh.Etot)
+                    
+                    if vb: # Print if Verbose
+                        print('\n----------')
+                        print('----------\n')
+                        print('Zbar: ', Zbar)
+                        print('Nele: ', Nele)
+                        print('Exc: ', exc)
+                        print('FAC: ', l)
+                        print('Parse: ', m)
+                        print('Pops: ', Pni)
+                        print('Stat.weight: ', sh.statweight)
+    
+                        print(sh.En)
+            En[uplo][Zbar_str]['{0:d}'.format(exc)] = Enx
+            Pn[uplo][Zbar_str]['{0:d}'.format(exc)] = Pnx
+            gn[uplo][Zbar_str]['{0:d}'.format(exc)] = gnx
+            Etot[uplo][Zbar_str]['{0:d}'.format(exc)] = Etotx
+      
+Zs = [Zkey for Zkey in list(En['up'].keys()) if list(En['up'][Zkey].keys())] # Keep only calculated charge states
 
-                sh.Pn = Pni # Pass Pn manually
-                sh.get_Qn()
-                
-                sh.get_Wn()
-                sh.get_En()
-                sh.get_statweight()
-                
-                Enx.append(sh.En)
-                Pnx.append(Pni)
-                gnx.append(sh.statweight)
-                
-                if vb: # Print if Verbose
-                    print('\n----------')
-                    print('----------\n')
-                    print('Zbar: ', Zbar)
-                    print('Nele: ', Nele)
-                    print('Exc: ', exc)
-                    print('FAC: ', l)
-                    print('Parse: ', m)
-                    print('Pops: ', Pni)
-                    print('Stat.weight: ', sh.statweight)
-
-                    print(sh.En)
-        En['{0:d}'.format(Zbar)]['{0:d}'.format(exc)] = Enx
-        Pn['{0:d}'.format(Zbar)]['{0:d}'.format(exc)] = Pnx
-        gn['{0:d}'.format(Zbar)]['{0:d}'.format(exc)] = gnx
+# Check all entries are same length -- biggg assumption is that up/lo files are identical
+# Convert to bool which raises a warning if populations don't differ correctly
+if vb:
+    for Z in Zs:
+        for exc in list(En['up'][Z].keys()):
+            # print('Lengths: ', len(En['lo'][Z][exc]), len(En['up'][Z][exc]))
+            print('Pn_up - Pn_lo: ', np.array(Pn['up'][Z][exc]) - np.array(Pn['lo'][Z][exc]))
         
-
 # %% hnu Plots
 
-Zs = [Zkey for Zkey in list(En.keys()) if list(En[Zkey].keys())] # Keep only calculated charge states
 Zbar_plot = np.array(Zs).astype(int)
 # Zbar_plot = [20,21,22,23,24]
 
@@ -159,10 +181,9 @@ Zbar_plot = np.array(Zs).astype(int)
 #               ylabel='Excitation degree')
 
 #### Plot hnu vs. Zbar
-tidx = [1,0] # Initial, final indices of transition to calculate
 
 # Set color equal to excitation degree
-exc_minmax = [0,3]
+exc_minmax = [min(exc_list), max(exc_list)]
 
 cmap_name = 'rainbow'
 cmap = mpl.cm.get_cmap(cmap_name)
@@ -170,12 +191,14 @@ norm = mpl.colors.Normalize(vmin=exc_minmax[0], vmax=exc_minmax[1])
 
 fig, ax = plt.subplots(figsize=[4,3])
 for i, Zbar in enumerate(Zbar_plot):
-    valid_exc = list(En['{0:d}'.format(Zbar)].keys())
+    Zbar_str = '{0:d}'.format(Zbar)
+    valid_exc = list(En['up'][Zbar_str].keys())
     for exc in valid_exc:
         color = norm(int(exc)) # Get rgba from colorbar
-        Enx = En[str(Zbar)][str(exc)]
-        dE = [abs(item[tidx[1]] - item[tidx[0]]) for item in Enx] # Loop over each configuration
-        plt.plot([Zbar]*len(dE), dE, '.',
+        # Enx = En[str(Zbar)][str(exc)]
+        hnu[Zbar_str][exc] = [abs(up - lo) for up,lo in zip(Etot['up'][Zbar_str][exc],
+                                            Etot['lo'][Zbar_str][exc])] # Loop over each configuration
+        plt.plot([Zbar]*len(hnu[Zbar_str][exc]), hnu[Zbar_str][exc], '.',
                     color=cmap(color),
                     alpha=1,
                     label=exc)
@@ -199,15 +222,19 @@ norm = mpl.colors.Normalize(vmin=exc_minmax[0], vmax=exc_minmax[1])
 
 fig, ax = plt.subplots(figsize=[4,3])
 for i, Zbar in enumerate(Zbar_plot):
-    valid_exc = list(En['{0:d}'.format(Zbar)].keys())
+    Zbar_str = '{0:d}'.format(Zbar)
+
+    valid_exc = list(En['up'][Zbar_str].keys())
     for exc in valid_exc:
         color = norm(int(exc)) # Get rgba from colorbar
-        Enx = En[str(Zbar)][str(exc)]
-        dE = [abs(item[tidx[1]] - item[tidx[0]]) for item in Enx] # Loop over each configuration
-        plt.plot([Zbar+int(exc) - 0.1*int(exc)]*len(dE), dE, '.',
-                    color=cmap(color),
-                    alpha=1,
-                    label=exc)
+        # Enx = En[str(Zbar)][str(exc)]
+        dE = [abs(up - lo) for up,lo in zip(Etot['up'][Zbar_str][exc],
+                                            Etot['lo'][Zbar_str][exc])] # Loop over each configuration
+        plt.plot([Zbar+int(exc) - 0.1*int(exc)]*len(hnu[Zbar_str][exc]),
+                  hnu[Zbar_str][exc], '.',
+                  color=cmap(color),
+                  alpha=1,
+                  label=exc)
         
 # Colorbar
 cax = fig.add_axes([0.2, 0.85, 0.5, 0.05])
@@ -218,8 +245,10 @@ plt.tight_layout()
 ax.set(xlabel='Zbar + Excitation degree',
        ylabel='hnu (eV)')
 
-# %% Saha-Boltzmann on complex energies - not yet implemented
+# %% Saha-Boltzmann 
+# on lower complexes energies
 
+#### Grid and parse
 # Generate KT, NE vectors
 Nn, NT = 10, 11 # Number of density, temperature gridpoints
 
@@ -230,49 +259,57 @@ Zbar0 = 20 # Estimated dZbar
 NE = rho0 / (A*mp) * Zbar0 # 1/cm^3, Ne range
 
 # Parse data for Saha-Boltzmann
-Earrs = []
-excarrs = []
-glists = []
+Earrs = [] # Array of total energy of each complex, sorted by charge state
+excarrs = [] # Excitation degree of each complex, sorted by charge state
+glists = [] # Total statistical weight of each complex, sorted by charge state
+hnuarrs = [] # Transition energy of each 
 
-Zs = [Zkey for Zkey in list(En.keys()) if list(En[Zkey].keys())] # Keep only calculated charge states
+Zs = [Zkey for Zkey in list(Etot['lo'].keys()) if list(Etot['up'][Zkey].keys())] # Keep only calculated charge states
 
-for Zkey in Zs:
+for Z in Zs:
     # Save off energy levels, excitation degree, and stat.weight of each complex,
     # grouped by ionization state
-    tmpEn = []
+    tmpEtot = []
     tmpexc = []
     tmpgn = []
-    for exc in list(En[Zkey].keys()):
-        N = len(En[Zkey][exc])
-        [tmpEn.extend(item) for item in En[Zkey][exc]]
-        [tmpexc.extend(exc) for item in range(N)]
-        [tmpgn.extend(item) for item in gn[Zkey][exc]]
+    tmphnu = []
+    for exc in list(Etot['lo'][Z].keys()):
+        N = len(Etot['lo'][Z][exc])
+        tmpEtot.extend(Etot['lo'][Z][exc])
+        [tmpexc.append(int(exc)) for item in range(N)]
+        [tmpgn.append(np.prod(item)) for item in gn['lo'][Z][exc]]
+        tmphnu.extend(hnu[Z][exc])
         
-    Earrs.append(np.array(tmpEn))
+    Earrs.append(np.array(tmpEtot))
     excarrs.append(np.array(tmpexc))
     glists.append(tmpgn)
+    hnuarrs.append(tmphnu)
 
 # Get ionization potentials
 Iplist = [Ip[int(item)] for item in Zs]
 
 Zbar = np.zeros(shape=[NT,Nn])
+pop = np.zeros(shape=[NT,Nn],dtype=object)
 for idx, items in enumerate(it.product(KT,NE)):
     kT, ne = items
     i, j = np.unravel_index(idx, shape=(NT,Nn))
     
+    #### Saha
     # Run Saha, with ne converted to m^-3. 
     out = saha(ne, kT, Earrs, glists, Iplist, returns='csd') # Returns: p     
     
     tmp = np.sum(np.arange(int(Zs[0]), int(Zs[-1])+2,) * out)
     Zbar[i,j] = tmp
     
+    #### Boltzmann
     # Run Boltzmann on each charge state
     p = []
     for Z,Earr,garr in zip(Zs, Earrs, glists):
-        p.append(boltzmann(Earr, garr, kT))
-
+        p.append(boltzmann(Earr, garr, kT, normalize=True))
+    pop[i,j] = p
 rho = NE/Zbar * A * mp # g/cm^3. Ne in 1/cm^3, mp in g
 
+# Zbar heatmap
 plt.figure(figsize=[5,3])
 plt.pcolormesh(np.log10(rho), np.log10(KT), Zbar, shading='nearest',
                vmin=int(Zs[0]), vmax=float(Zs[-1]))
@@ -283,3 +320,29 @@ plt.gca().set(xlabel='log10(rho (g/cm^3))',
               title=['Z={0:d}'.format(ZZ),
                       ' exc=',exc_list,
                       'Zbar = {0:s} to {1:s}'.format(Zs[0], Zs[-1])])
+
+# hnu vs. Zbar, with color equal to Boltzmann population
+# Set color equal to population fraction
+cmap_name = 'rainbow'
+cmap = mpl.cm.get_cmap(cmap_name)
+norm = mpl.colors.Normalize(vmin=0, vmax=1)
+
+fig, ax = plt.subplots(figsize=[4,3])
+for Zbar, exc, hnu_i, p in zip(Zbar_plot, excarrs, hnuarrs, pop):
+
+    plt.scatter(Zbar+exc - 0.1*exc,
+                hnu_i, #'.',
+                color=cmap(p),
+                # alpha=1,
+                label=exc)
+        
+# Colorbar
+cax = fig.add_axes([0.2, 0.85, 0.5, 0.05])
+cb = mpl.colorbar.ColorbarBase(ax=cax, cmap=cmap, norm = norm,
+                                orientation='horizontal',)
+cb.set_label('Excitation degree',)
+plt.tight_layout()
+ax.set(xlabel='Zbar + Excitation degree',
+       ylabel='hnu (eV)')
+
+
