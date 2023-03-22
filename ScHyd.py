@@ -277,7 +277,54 @@ class AvIon():
             self.Zbar = (1-C)*self.Zbar + C*Zbar
         else:
             self.Zbar = Zbar
-
+            
+    def get_abs_osc_str(self, ni, li, nj, lj):
+        ''' Calculates absorption oscillator strength of the given nl transition,
+        summed over all initial and final states given shell populations.
+            Due to the double sum, this gives a statistically weighted osc. str. gf
+            
+            Current populations are taken to be the lower state.
+            
+        
+        Parameters
+        ----------
+            ni, li : int
+                Initial principal and angular quantum numbers
+            nj, lj : int
+                Final principal and angular quantum numbers
+                
+        '''
+        
+        # Get hydrogenic oscillator strength for given transition. From Table
+        faH_dict = {'10':{'21':0.4162, # Key format: ni li, nj lj. ['10']['21'] is 1s -> 2p
+                     '31':0.0791,
+                     '41':0.0290,
+                     '51':0.0139,
+                     '61':0.0078,
+                     '71':0.0048,
+                     '81':0.0032
+                     },
+               }
+        faH = faH_dict['{0:d}{1:d}'.format(ni, li)]['{0:d}{1:d}'.format(nj, lj)]
+                     
+        
+        # Range of possible initial and final configuration (nl-resolved) occupations
+        # Are wi and wj guaranteed to be same length?
+        # Are wi and wj independent given only the Pn? Yes if delta_n != 0
+        wi = np.arange(max(0, self.Pn[ni-1] - 2*ni**2 + (4*li + 2)),
+                       min(self.Pn[ni-1], 4*li + 2)+1) # +1 for inclusive of endpoint
+        
+        wj = np.arange(max(0, self.Pn[nj-1]+1 - 2*nj**2 + (4*lj + 2)),
+                       min(self.Pn[nj-1]+1, 4*lj + 2)+1) # Pn+1 because final state has one more electron in nj lj compared to initial state
+        
+        # Given a set of Pn, wi and wj are independent. Mesh product
+        wi, wj = np.meshgrid(wi, wj)
+        
+        Fa_n = np.sum(wi*(4*lj + 3-wj)/(4*lj + 2) * faH) # Osc. str. summed over final levels, and summed over initial states. Modified from Griem (3.31)
+        
+        self.fsum = Fa_n
+        return
+        
 
 def get_ionization(Z, return_energy_levels=False):
     ''' Calculates ionization potential for isolated atoms.
@@ -706,6 +753,19 @@ if __name__=='__main__':
         
         # Es = [5414, 5947, 5932, 7016]
         # [plt.axhline(E) for E in Es]
+        
+    if 1: # Test oscillator strengths
+        Z = 1
+        # isol = AvIon(36,0, nmax=10)
+        isol = AvIon(Z,Zbar=0, nmax=10)
+        isol.get_Pn()
+        isol.get_Qn()
+        isol.get_Wn()
+        isol.get_En()
+        
+        isol.get_abs_osc_str(1, 0, 2, 1)
+        print(isol.fsum)
+   
     
     #### Dense plasma      
     if 0: # Aluminum to reproduce Atzeni's Fig. 10.3      
@@ -730,7 +790,7 @@ if __name__=='__main__':
             plt.title(CL)
         
         
-    if 1: # Test other Z
+    if 0: # Test other Z
         iter_scheme = '123' # Loop 1=gPQ, 2=PQWE, and/or 3=Z*
         # Z, Zbar, A = 8, 1, 16 # O
         # Z, Zbar, A = 24, 1, 52 #   cCr
