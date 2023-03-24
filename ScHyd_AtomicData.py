@@ -18,6 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import scipy as sp
+from scipy.special import comb
 from matplotlib.lines import Line2D # For custom legend
 from matplotlib.widgets import Button # For widgets
 
@@ -30,7 +31,7 @@ from copy import deepcopy
 from ScHyd import get_ionization, AvIon
 from saha_boltzmann_populations import saha, boltzmann
 
-# %% Class
+
 class AtDat():
     
     def __init__(self, Z, A, Zbar_min=0, nmax=5, exc_list=[0,1]):
@@ -172,6 +173,7 @@ class AtDat():
         excarrs = [] # Excitation degree of each complex, sorted by charge state
         glists = [] # Total statistical weight of each complex, sorted by charge state
         hnuarrs = [] # Transition energy of each 
+        Pnarrs = []
 
         # Zs = [Zkey for Zkey in list(Etot['lo'].keys()) if list(Etot['up'][Zkey].keys())] # Keep only calculated charge states
         for Z in self.Zkeys:
@@ -181,14 +183,18 @@ class AtDat():
             tmpexc = []
             tmpgn = []
             tmphnu = []
+            tmpPn = []
             for exc in list(self.Etot[uplo][Z].keys()):
                 N = len(self.Etot[uplo][Z][exc])
                 tmpEtot.extend(self.Etot[uplo][Z][exc])
                 [tmpexc.append(int(exc)) for item in range(N)]
                 [tmpgn.append(np.prod(item)) for item in self.gn[uplo][Z][exc]]
                 tmphnu.extend(self.hnu[Z][exc])
+
+                tmpPn.extend(self.Pn[uplo][Z][exc])
                 
             Earrs.append(np.array(tmpEtot))
+            Pnarrs.append(np.array(tmpPn))
             excarrs.append(np.array(tmpexc))
             glists.append(tmpgn)
             hnuarrs.append(tmphnu)
@@ -202,6 +208,10 @@ class AtDat():
         self.excarrs = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in excarrs])
         self.glists  = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in glists])
         self.hnuarrs = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in hnuarrs])
+
+        # Pad 1st dimension of Pnarrs only. Shape (Z, max_length, nmax)
+        self.Pnarrs  = np.array([np.pad(item, [(0, max_length-len(item)), (0,0)], constant_values=int(0)) for item in Pnarrs]) 
+
         return
     
     def saha_boltzmann(self, KT, NE):
@@ -278,6 +288,71 @@ class AtDat():
         self.pstate_rho = pboltz_rho * psaha_rho[Ellipsis,:-1, np.newaxis]  # Shape: T, rho, Z, state
         return
 
+    
+    def get_spectra(self,ni,li,nj,lj):
+        ''' Converts atomic data and SB populations into spectra.
+        
+
+        Returns
+        -------
+        None.
+
+        '''
+        
+        # Get oscillator strength
+        
+        # Given shell populations, calculate fraction of all possible configurations
+        # which would admit desired transition
+
+        # Construct array of all population ranges to sum
+        # Permissible populations of initial lower active state.
+        # Range is from 1 (for at least one available) OR all other sub-shells full,
+        # to shell pop OR full sub-shell
+        r0 = np.maximum(1, self.Pnarrs[:,:,ni-1] - (2*ni**2-(4*li+2))).astype(int) # Range minimum
+        r1 = np.minimum(self.Pnarrs[:,:,ni-1], 4*li+2).astype(int) + 1 # range maximum. +1 for inclusive
+        gi = [] 
+        for rr in zip(r0.flatten(),r1.flatten()):
+            tmp = []
+            for w in range(*rr):
+                tmp.append(comb(4*li+2, w))
+            gi.append(np.sum(tmp))
+        gi = np.array(gi).reshape(self.Pnarrs.shape[:-1])
+
+        # wrange_abs = np.arange(max(0, Pn - (2*n**2-(4*ell+2))), min(Pn, 4*ell+2-1) + 1)
+
+        # Permissible populations of initial upper active state.
+        # Range is from 0 (for at least one hole) OR all other sub-shells full,
+        # to shell pop OR full sub-shell-1
+        r0 = np.maximum(0, self.Pnarrs[:,:,nj-1] - (2*nj**2-(4*lj+2))).astype(int) # Range minimum
+        r1 = np.minimum(self.Pnarrs[:,:,nj-1], 4*lj+2-1).astype(int) + 1 # range maximum. +1 for inclusive
+        gj = []
+        for rr in zip(r0.flatten(),r1.flatten()):
+            tmp = []
+            for w in range(*rr):
+                tmp.append(comb(4*lj+2, w))
+            gj.append(np.sum(tmp))
+        gj = np.array(gj).reshape(self.Pnarrs.shape[:-1])
+        # # gi = [np.sum([comb(4*li+2, w) for w in range(1, t)]) for t in tmp_i.flatten()] # Sum combinations over allowed sub-shell populations
+        # # gi = np.array(gi).reshape(self.Pnarrs.shape[:-1])
+        
+        # # Permissible populations of initial active state.
+        # # Range is from 0 (for at least one available) to shell pop or full sub-shell - 1
+        # tmp_j = np.minimum(self.Pnarrs[:,:,nj-1], 4*lj+2).astype(int)
+        # gj = [np.sum([comb(4*lj+2, w) for w in range(1, t)]) for t in tmp_j.flatten()]
+        # gj = np.array(gj).reshape(self.Pnarrs.shape[:-1])
+        
+        # # Multiplicity of allowed transitions is product of initial and final
+        g_allowed = gi*gj
+        g_tot = comb(2*ni**2, self.Pnarrs[:,:,ni-1]) \
+              * comb(2*nj**2, self.Pnarrs[:,:,nj-1]) # Total possible transitions
+        
+        frac = g_allowed / g_tot # Fraction of allowed transitions
+        
+        # gperm = np.sum(gi)*np.sum(gj) # Number of state combinations permitting transitions
+        # gn = (2*ni**2) * (2*nj**2) # Total cobinations of states
+        # frac = gperm/gn
+        
+        return
     
     def plot_hnu(self, exc_minmax, Zbar_plot=None, xaxis='Zbar',
                  fig=None, ax=None, cmap_name='rainbow'):
@@ -566,7 +641,7 @@ if __name__=='__main__':
     Zbar_min = 16
     nmax = 5 # Maximum allowed shell
     exc_list = [0,1,2,3] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
-    pf = 1
+    pf = 0
     
     # Run model
     ad = AtDat(ZZ, A, Zbar_min, nmax, exc_list,)
@@ -587,6 +662,8 @@ if __name__=='__main__':
     # Run Saha-Boltzmann
     ad.saha_boltzmann(KT, NE)
     ad.saha_boltzmann_rho(rho_grid)
+    
+    ad.get_spectra(1, 0, 2, 1)
     
     if pf:
         fig, ax = plt.subplots(figsize=[4,3])

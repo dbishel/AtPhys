@@ -322,7 +322,7 @@ class AvIon():
         
         Fa_n = np.sum(wi*(4*lj + 3-wj)/(4*lj + 2) * faH) # Osc. str. summed over final levels, and summed over initial states. Modified from Griem (3.31)
         
-        self.fsum = Fa_n
+        self.fsum = Fa_n # THIS is gf
         return
         
 
