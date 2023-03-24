@@ -37,7 +37,10 @@ class AtDat():
     def __init__(self, Z, A, Zbar_min=0, nmax=5, exc_list=[0,1]):
         
         ##### Constants #####
-        self.mp = 1.67262192e-30
+        self.mp = 1.67262192e-24 # g .Proton mass
+        self.rbohr = 0.519e-8 # cm. Bohr radius
+        self.re = 2.81974e-13 # cm. Classical electron radius
+        self.c = 2.998e10 # cm/s. Speed of light
         
         ##### Inputs #####
         self.Z = Z
@@ -288,8 +291,38 @@ class AtDat():
         self.pstate_rho = pboltz_rho * psaha_rho[Ellipsis,:-1, np.newaxis]  # Shape: T, rho, Z, state
         return
 
-    
-    def get_spectra(self,ni,li,nj,lj):
+    # def get_osc_str(self, ni,li,nj,lj):
+    #     # Get hydrogenic oscillator strength for given transition. From Table
+    #     faH_dict = {'10':{'21':0.4162, # Key format: ni li, nj lj. ['10']['21'] is 1s -> 2p
+    #                  '31':0.0791,
+    #                  '41':0.0290,
+    #                  '51':0.0139,
+    #                  '61':0.0078,
+    #                  '71':0.0048,
+    #                  '81':0.0032
+    #                  },
+    #            }
+    #     faH = faH_dict['{0:d}{1:d}'.format(ni, li)]['{0:d}{1:d}'.format(nj, lj)]
+    #     fa_bar = wi*(4*lj + 3-wj)/(4*lj + 2) * faH
+        
+        
+    #     # Range of possible initial and final configuration (nl-resolved) occupations for absorption
+    #     wi = np.arange(max(0, self.Pn[ni-1] - 2*ni**2 + (4*li + 2)),
+    #                    min(self.Pn[ni-1], 4*li + 2)+1) # +1 for inclusive of endpoint
+        
+    #     wj = np.arange(max(0, self.Pn[nj-1]+1 - 2*nj**2 + (4*lj + 2)),
+    #                    min(self.Pn[nj-1]+1, 4*lj + 2)+1) # Pn+1 because final state has one more electron in nj lj compared to initial state
+        
+    #     # Given a set of Pn, wi and wj are independent. Mesh product
+    #     wi, wj = np.meshgrid(wi, wj)
+        
+    #     Fa_n = np.sum(wi*(4*lj + 3-wj)/(4*lj + 2) * faH) # Osc. str. summed over final levels, and summed over initial states. Modified from Griem (3.31)
+        
+    #     self.fsum = Fa_n # THIS is gf
+
+    #     return
+
+    def get_opacity(self,ni,li,nj,lj):
         ''' Converts atomic data and SB populations into spectra.
         
 
@@ -298,28 +331,37 @@ class AtDat():
         None.
 
         '''
+        width = 10 * 2.41799e14 # eV -> Hz to match units of prefactor in xsec
+        amp = 1/2/np.pi / width # 1/Hz. Value of normalized line shape at line center. Used in xsec
+        # Get hydrogenic oscillator strength
+        fH_dict = {'10':{'21':0.4162, # Key format: ni li, nj lj. ['10']['21'] is 1s -> 2p
+                     '31':0.0791,
+                     '41':0.0290,
+                     '51':0.0139,
+                     '61':0.0078,
+                     '71':0.0048,
+                     '81':0.0032
+                     },
+               }
+        fH = fH_dict['{0:d}{1:d}'.format(ni, li)]['{0:d}{1:d}'.format(nj, lj)]
         
-        # Get oscillator strength
-        
-        # Given shell populations, calculate fraction of all possible configurations
-        # which would admit desired transition
+        # Weight osc. str. pre-factor over configurations which actually allow the transition
 
-        # Construct array of all population ranges to sum
+        # Lower state prefactor: w
         # Permissible populations of initial lower active state.
         # Range is from 1 (for at least one available) OR all other sub-shells full,
         # to shell pop OR full sub-shell
         r0 = np.maximum(1, self.Pnarrs[:,:,ni-1] - (2*ni**2-(4*li+2))).astype(int) # Range minimum
         r1 = np.minimum(self.Pnarrs[:,:,ni-1], 4*li+2).astype(int) + 1 # range maximum. +1 for inclusive
-        gi = [] 
+        gi = [] # Not truly statistical weight
         for rr in zip(r0.flatten(),r1.flatten()):
             tmp = []
             for w in range(*rr):
-                tmp.append(comb(4*li+2, w))
+                tmp.append(w*comb(4*li+2, w))
             gi.append(np.sum(tmp))
         gi = np.array(gi).reshape(self.Pnarrs.shape[:-1])
-
-        # wrange_abs = np.arange(max(0, Pn - (2*n**2-(4*ell+2))), min(Pn, 4*ell+2-1) + 1)
-
+        
+        # Upper state prefactor: (4*lj + 2 - w) / (4*lj + 2)
         # Permissible populations of initial upper active state.
         # Range is from 0 (for at least one hole) OR all other sub-shells full,
         # to shell pop OR full sub-shell-1
@@ -329,28 +371,80 @@ class AtDat():
         for rr in zip(r0.flatten(),r1.flatten()):
             tmp = []
             for w in range(*rr):
-                tmp.append(comb(4*lj+2, w))
+                tmp.append((4*lj+2 - w) / (4*lj+2) * comb(4*lj+2, w))
             gj.append(np.sum(tmp))
         gj = np.array(gj).reshape(self.Pnarrs.shape[:-1])
-        # # gi = [np.sum([comb(4*li+2, w) for w in range(1, t)]) for t in tmp_i.flatten()] # Sum combinations over allowed sub-shell populations
-        # # gi = np.array(gi).reshape(self.Pnarrs.shape[:-1])
-        
-        # # Permissible populations of initial active state.
-        # # Range is from 0 (for at least one available) to shell pop or full sub-shell - 1
-        # tmp_j = np.minimum(self.Pnarrs[:,:,nj-1], 4*lj+2).astype(int)
-        # gj = [np.sum([comb(4*lj+2, w) for w in range(1, t)]) for t in tmp_j.flatten()]
-        # gj = np.array(gj).reshape(self.Pnarrs.shape[:-1])
-        
-        # # Multiplicity of allowed transitions is product of initial and final
-        g_allowed = gi*gj
+
+        # Total number of transitions
         g_tot = comb(2*ni**2, self.Pnarrs[:,:,ni-1]) \
               * comb(2*nj**2, self.Pnarrs[:,:,nj-1]) # Total possible transitions
+              
+        prefactor = gi*gj / g_tot
         
-        frac = g_allowed / g_tot # Fraction of allowed transitions
+        # Sum over final states, and average over initial states
+        gf = prefactor * fH
         
-        # gperm = np.sum(gi)*np.sum(gj) # Number of state combinations permitting transitions
-        # gn = (2*ni**2) * (2*nj**2) # Total cobinations of states
-        # frac = gperm/gn
+        # Calculate cross-section of each transition. See Perez-Callejo JQSRT 202
+        xsec = 2.6553e-06 * gf * 1e4 # cm^2. Prefactor = e^2 / (4 epsilon_0) / me / c in mks
+        
+        breakpoint()
+        # "State" population is fractional population * Ntot, on rho_grid
+        # Note: pstate_rho is shape [T, rho, Zbar, complex]
+        Ni = self.rho_grid / (self.A * self.mp) # cm^-3, ion density
+        alpha_line = xsec * Ni[np.newaxis,:,np.newaxis,np.newaxis] \
+                    * self.pstate_rho * amp # cm^-1. "Opacity" at line center, given state populations
+                    
+        # Calculate opacity
+        self.kappa_line = alpha_line / rho_grid[None,:,None,None] # cm^2 / g
+        
+        # # Calculate cross-section of each transition. pstate_rho is shape [T, rho, Zbar, complex]
+        # xsec = amp*(2*np.pi**2 * self.re * self.c * gf) # cm^2. Line cross-section (no lineshape)
+        
+        # # Calculate linear attenuation coefficient. pstate_rho is shape [T, rho, Zbar, complex]
+        # # "State" population is fractional population * Ntot, on rho_grid
+        # alpha = xsec * self.pstate_rho \
+        #              * (self.rho_grid /self.A/self.mp)[np.newaxis,:,np.newaxis,np.newaxis]
+                     
+        # # Calculate opacity, cm^2/g
+        # kappa = alpha / self.rho_grid[np.newaxis,:,np.newaxis,np.newaxis] # cm^2 / g
+        # self.kappa = kappa
+
+        # # Given shell populations, calculate fraction of all possible configurations
+        # # which would admit desired transition
+
+        # # Construct array of all population ranges to sum
+        # # Permissible populations of initial lower active state.
+        # # Range is from 1 (for at least one available) OR all other sub-shells full,
+        # # to shell pop OR full sub-shell
+        # r0 = np.maximum(1, self.Pnarrs[:,:,ni-1] - (2*ni**2-(4*li+2))).astype(int) # Range minimum
+        # r1 = np.minimum(self.Pnarrs[:,:,ni-1], 4*li+2).astype(int) + 1 # range maximum. +1 for inclusive
+        # gi = [] 
+        # for rr in zip(r0.flatten(),r1.flatten()):
+        #     tmp = []
+        #     for w in range(*rr):
+        #         tmp.append(comb(4*li+2, w))
+        #     gi.append(np.sum(tmp))
+        # gi = np.array(gi).reshape(self.Pnarrs.shape[:-1])
+
+        # # Permissible populations of initial upper active state.
+        # # Range is from 0 (for at least one hole) OR all other sub-shells full,
+        # # to shell pop OR full sub-shell-1
+        # r0 = np.maximum(0, self.Pnarrs[:,:,nj-1] - (2*nj**2-(4*lj+2))).astype(int) # Range minimum
+        # r1 = np.minimum(self.Pnarrs[:,:,nj-1], 4*lj+2-1).astype(int) + 1 # range maximum. +1 for inclusive
+        # gj = []
+        # for rr in zip(r0.flatten(),r1.flatten()):
+        #     tmp = []
+        #     for w in range(*rr):
+        #         tmp.append(comb(4*lj+2, w))
+        #     gj.append(np.sum(tmp))
+        # gj = np.array(gj).reshape(self.Pnarrs.shape[:-1])
+        
+        # # # Multiplicity of allowed transitions is product of initial and final
+        # g_allowed = gi*gj
+        # g_tot = comb(2*ni**2, self.Pnarrs[:,:,ni-1]) \
+        #       * comb(2*nj**2, self.Pnarrs[:,:,nj-1]) # Total possible transitions
+        
+        # # frac = g_allowed / g_tot # Fraction of allowed transitions
         
         return
     
@@ -663,7 +757,7 @@ if __name__=='__main__':
     ad.saha_boltzmann(KT, NE)
     ad.saha_boltzmann_rho(rho_grid)
     
-    ad.get_spectra(1, 0, 2, 1)
+    ad.get_opacity(1, 0, 2, 1)
     
     if pf:
         fig, ax = plt.subplots(figsize=[4,3])
