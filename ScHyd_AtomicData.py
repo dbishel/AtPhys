@@ -23,7 +23,7 @@ from matplotlib.lines import Line2D # For custom legend
 from matplotlib.widgets import Button # For widgets
 
 import os                       # Used to e.g. change directory
-import sys                      # Used to put breaks/exits for debugging
+import sys                      
 import re
 import itertools as it
 from copy import deepcopy
@@ -49,7 +49,7 @@ class AtDat():
         self.nmax = nmax
         self.exc_list = exc_list
         
-        ##### Initialize dictionaries #####
+        ##### Initialize data structures #####
         # Dict of dict of dict: En['up' or'lo'][Zbar][excitation degree]
         dict_base = {'{0:d}'.format(item): {} for item in range(ZZ)}
         self.En = {item:deepcopy(dict_base) for item in ['up','lo']}  # Shell energies
@@ -59,6 +59,10 @@ class AtDat():
         
         # Dict of dict: hnu[Zbar][excitation degree]
         self.hnu = deepcopy(dict_base) # Transition energy 
+        
+        # Dict of lists: lineshape_dict['L'] or ['G'] = []
+        self.lineshape_dict = {'G':[],
+                               'L':[]}
                         
     def get_atomicdata(self, DIR='complexes/', vb=False):
         ''' Calculates atomic data for each excited complex in given directory.
@@ -291,39 +295,25 @@ class AtDat():
         self.pstate_rho = pboltz_rho * psaha_rho[Ellipsis,:-1, np.newaxis]  # Shape: T, rho, Z, state
         return
 
-    # def get_osc_str(self, ni,li,nj,lj):
-    #     # Get hydrogenic oscillator strength for given transition. From Table
-    #     faH_dict = {'10':{'21':0.4162, # Key format: ni li, nj lj. ['10']['21'] is 1s -> 2p
-    #                  '31':0.0791,
-    #                  '41':0.0290,
-    #                  '51':0.0139,
-    #                  '61':0.0078,
-    #                  '71':0.0048,
-    #                  '81':0.0032
-    #                  },
-    #            }
-    #     faH = faH_dict['{0:d}{1:d}'.format(ni, li)]['{0:d}{1:d}'.format(nj, lj)]
-    #     fa_bar = wi*(4*lj + 3-wj)/(4*lj + 2) * faH
+    def append_lineshape(self, width, ltype):
+        ''' Appends linewidth (eV) of given type ('G' or 'L')
+        to lineshape_dict
         
-        
-    #     # Range of possible initial and final configuration (nl-resolved) occupations for absorption
-    #     wi = np.arange(max(0, self.Pn[ni-1] - 2*ni**2 + (4*li + 2)),
-    #                    min(self.Pn[ni-1], 4*li + 2)+1) # +1 for inclusive of endpoint
-        
-    #     wj = np.arange(max(0, self.Pn[nj-1]+1 - 2*nj**2 + (4*lj + 2)),
-    #                    min(self.Pn[nj-1]+1, 4*lj + 2)+1) # Pn+1 because final state has one more electron in nj lj compared to initial state
-        
-    #     # Given a set of Pn, wi and wj are independent. Mesh product
-    #     wi, wj = np.meshgrid(wi, wj)
-        
-    #     Fa_n = np.sum(wi*(4*lj + 3-wj)/(4*lj + 2) * faH) # Osc. str. summed over final levels, and summed over initial states. Modified from Griem (3.31)
-        
-    #     self.fsum = Fa_n # THIS is gf
 
-    #     return
+        Parameters
+        ----------
+        width : array
+            Linewidth (eV) for each state. Shape [T, rho, Z, complex]
+        ltype : str
+            Linewidth type. 'G' for Gaussian or 'L' for Lorentzian.
+        '''
+        
+        self.lineshape_dict[ltype.upper()].append(width)
+        return
 
-    def get_opacity(self,ni,li,nj,lj):
-        ''' Converts atomic data and SB populations into spectra.
+    def append_doppler_width(self):
+        ''' Calculates Doppler width (eV) of each line at each (T,rho) and appends to 
+        lineshape list. Gaussian.
         
 
         Returns
@@ -331,8 +321,118 @@ class AtDat():
         None.
 
         '''
-        width = 10 * 2.41799e14 # eV -> Hz to match units of prefactor in xsec
-        amp = 1/2/np.pi / width # 1/Hz. Value of normalized line shape at line center. Used in xsec
+        width = []
+        self.append_lineshape(width, 'G')
+        return
+
+    def append_natural_width(self):
+        ''' Calculates natural width (eV) of each line at each (T,rho) and appends to 
+        lineshape list. Loretnzian
+        
+
+        Returns
+        -------
+        None.
+
+        '''
+        
+        width = []
+        self.append_lineshape(width, 'L')
+        return
+    
+    def lorentz(self, x, x0, gamma, norm=False):
+        ''' Returns Lorentzian profile from given width parameter gamma.
+            gamma = HWHM
+            FWHWM = 2*gamma.
+        '''
+        
+        if norm: # Return area-normalized
+            return 1/np.pi * gamma / ( (x-x0)**2 + gamma**2 )
+        else:  # Return maximum = 1
+            return gamma**2 / ( (x-x0)**2 + gamma**2)
+    
+    def gauss(self, x, x0, sigma, norm=False):
+        ''' Returns normalized Gaussian profile from given width parameter sigma.
+            sigma = FWHM / (2*sqrt(2 ln 2)) ~ FWHM / 2.3548200
+            FWHWM = 2.3548200 * sigma.
+        '''
+        
+        if norm: # Return area-normalized
+            return 1/np.sqrt(2*np.pi) / sigma * np.exp( - (x-x0)**2 / 2 / sigma**2)
+        else: # Return maximum = 1
+            return np.exp( - (x-x0)**2 / 2 / sigma**2)
+        
+        
+    def sum_linewidths(self, width_min=1e-100):
+        ''' Calculates total linewidths (eV).
+        Gaussian widths are quadrature-summed, and Lorentzian widths are summed.        
+
+        Returns
+        -------
+        None.
+
+        '''
+        
+        # Sum over Lorentzian width sources, denoted by ltype = 'L' or 'l'
+        # Sum axis=0
+        lor_width = np.sum(self.lineshape_dict['L'], axis=0)
+
+        # @ Quadrature-sum over Gaussian widths, denoted by ltype = 'G' or 'g'
+        # Sum axes is the same as lor_width
+        gau_width = np.sqrt(np.sum(np.array(self.lineshape_dict['G'])**2, axis=0))
+        
+        # Set zero-width Lorentzian lines to minimum width
+        if type(lor_width)==np.ndarray:
+            lor_width[lor_width==0]=width_min
+        else:
+            if lor_width==0:
+                lor_width = width_min
+        
+        # Set zero-width Gaussian lines to minimum width
+        if type(gau_width)==np.ndarray:
+            gau_width[gau_width==0]=width_min
+        else:
+            if gau_width==0:
+                gau_width = width_min
+            
+        # Total Gaussian and Lorentzian lineshapes of each state. Shape[T,rho,Z,complex]
+        self.lineshape_tot = {'G': gau_width,
+                              'L': lor_width}
+    
+    def get_linecenter(self, method='pseudo'):
+        ''' Returns the value (1/eV) at line center of each normalized lineshape.
+            Widths must be in eV and cannot be 0
+        '''
+        
+        if method=='pseudo':
+            # Pseudo-Voigt
+            fg = self.lineshape_tot['G'] * 2.3548200 # Gaussian FWHM
+            fl = self.lineshape_tot['L'] * 2 # Lorentzian FWHM
+            ftot = (fg**5
+                    + 2.69269 * fg**4 * fl \
+                    + 2.42843 * fg**3 * fl**2 \
+                    + 4.47163 * fg**2 * fl**3 \
+                    + 0.07842 * fg * fl**4 \
+                    + fl**5 )**(1/5) # Total FWHM
+            
+            eta = (1.36603 * (fl/ftot) \
+                    - 0.47719 * (fl/ftot)**2 \
+                    + 0.11116 * (fl/ftot)**3) # pseudo-Voigt mixing parameter
+            
+            return (eta / (np.pi*self.lineshape_tot['L']) \
+                    + (1-eta) / np.sqrt(2*np.pi) / self.lineshape_tot['G'])       
+    
+
+    def get_line_opacity(self,ni,li,nj,lj):
+        ''' Converts atomic data and SB populations into opacity at linecenter of each line.
+        
+
+        Returns
+        -------
+        None.
+
+        '''
+        linecenter = self.get_linecenter() # 1/eV. Value of normalized line shape at line center. Used in xsec
         # Get hydrogenic oscillator strength
         fH_dict = {'10':{'21':0.4162, # Key format: ni li, nj lj. ['10']['21'] is 1s -> 2p
                      '31':0.0791,
@@ -385,14 +485,13 @@ class AtDat():
         gf = prefactor * fH
         
         # Calculate cross-section of each transition. See Perez-Callejo JQSRT 202
-        xsec = 2.6553e-06 * gf * 1e4 # cm^2. Prefactor = e^2 / (4 epsilon_0) / me / c in mks
+        xsec = (2.6553e-06 / 2.41799e14) * gf * 1e4 # cm^2 eV. Prefactor = (e^2 / (4 epsilon_0) / me / c) * (eV/Hz) in mks
         
-        breakpoint()
         # "State" population is fractional population * Ntot, on rho_grid
         # Note: pstate_rho is shape [T, rho, Zbar, complex]
         Ni = self.rho_grid / (self.A * self.mp) # cm^-3, ion density
         alpha_line = xsec * Ni[np.newaxis,:,np.newaxis,np.newaxis] \
-                    * self.pstate_rho * amp # cm^-1. "Opacity" at line center, given state populations
+                    * self.pstate_rho * linecenter # cm^-1. "Opacity" at line center, given state populations
                     
         # Calculate opacity
         self.kappa_line = alpha_line / rho_grid[None,:,None,None] # cm^2 / g
@@ -447,6 +546,86 @@ class AtDat():
         # # frac = g_allowed / g_tot # Fraction of allowed transitions
         
         return
+    
+    def generate_lineshapes(self, hnu_axis, method='pseudo', norm=False):
+        ''' Generates line profiles from total Gaussian and Lorentzian lineshapes
+        according to the given method, for each state.
+        
+
+        Parameters
+        ----------
+        hnu_axis : array
+            1-D array of hnu values (eV) at which to calculate lineprofile.
+        method : str, optional
+            Method to generate lineshapes. The default is 'pseudo'. \n
+            - pseudo : Pseudo-Voigt profile is used
+        norm : bool
+            Option to return area-normalized (True) or unit-height (False) lineshapes.
+            Unit-height is used to multiply against opacity at linecenter
+            (from get_line_opacity) to obtiain opacity spectrum.
+
+        Returns
+        -------
+        lines : array
+            Shape [T, rho, Z, complex, hnu_axis] array of the 
+            lineprofile of each state.
+
+        '''
+        # Expand dimensions. All must be shape [NT,Nn,NZ, Ncomplex, Nhnu]
+        # Add empty dimensions to compensate
+        hnu_axis = np.expand_dims(hnu_axis, axis=list(range(0,len(self.pstate_rho.shape)))) # Add T,n,Z,complex dimensions
+        hnu0 = np.expand_dims(self.hnuarrs, axis=(0,1,-1)) # Add T,n, hnu dimensions
+        
+        # Sum over lines to get kappa spectrum. Shape[NT, Nn, Nhnu]
+        # kappa_line.shape [NT, Nn, NZbar, Ncomplex]
+        Nhnu = len(hnu_axis)
+        spec = np.zeros([self.NT, self.Nn, Nhnu])
+        
+        if method=='pseudo':
+            fg = self.lineshape_tot['G'] * 2.3548200 # Gaussian FWHM
+            fl = self.lineshape_tot['L'] * 2 # Lorentzian FWHM
+            ftot = (fg**5
+                    + 2.69269 * fg**4 * fl \
+                    + 2.42843 * fg**3 * fl**2 \
+                    + 4.47163 * fg**2 * fl**3 \
+                    + 0.07842 * fg * fl**4 \
+                    + fl**5 )**(1/5) # Total FWHM
+            
+            eta = (1.36603 * (fl/ftot) \
+                    - 0.47719 * (fl/ftot)**2 \
+                    + 0.11116 * (fl/ftot)**3) # pseudo-Voigt mixing parameter
+                
+            # Add hnu dimension.
+            ftot = np.expand_dims(ftot, axis=-1)
+            eta = np.expand_dims(eta, axis=-1)
+
+            # Lorentzian requires HWHM, Gaussian requires sigma = FWHM / 2.3548200
+            lines = eta * self.lorentz(hnu_axis, hnu0, gamma=(ftot/2), norm=False) \
+                    + (1-eta) * self.gauss(hnu_axis, hnu0, sigma=(ftot/2.3548200)) # pseudo-Voigt profile of each line
+
+        # # Sum lines over Z and complex.  Shape [T, rho, Z, complex, hnu] -> [T,rho,hnu]
+        # spec = np.sum(lines, axis=(2,3))     
+            
+        return lines
+    
+    
+    def generate_spectra(self, hnu_axis, method='pseudo'):
+        ''' Calculates opacity spectrum.
+        For each T,rho, sums over spectral opacity (line opacity * lineshape)
+        of each charge state and complex.
+        '''
+        
+        # Get UNIT-HEIGHT lineshapes
+        lines = self.generate_lineshapes(hnu_axis, method=method, norm=False)
+        
+        # Multiply against opacity at line center
+        opac = lines * np.expand_dims(self.kappa_line, axis=-1)
+        
+        # Sum over Zbar and complexes, axis=(2,3)
+        self.kappa = np.sum(opac, axis=(2,3))
+        
+        return
+    
     
     def plot_hnu(self, exc_minmax, Zbar_plot=None, xaxis='Zbar',
                  fig=None, ax=None, cmap_name='rainbow'):
@@ -744,8 +923,13 @@ if __name__=='__main__':
     ad.tidy_arrays('lo')
     
     # Define T, Ne, rho grids for SB
-    Nn, NT = 10, 11 # Number of density, temperature gridpoints
-    KT = np.logspace(1.5,3, num=NT) # eV, Temperature range, 
+    # Nn, NT = 10, 11 # Number of density, temperature gridpoints
+    # KT = np.logspace(1.5,3, num=NT) # eV, Temperature range, 
+
+    Nn, NT = 2, 51 # Number of density, temperature gridpoints
+    # KT = np.logspace(1.8,2, num=NT) # eV, Temperature range, 
+    KT = np.linspace(70,200, num=NT) # eV, Temperature range, 
+
     rho0 = np.logspace(0.5,2, num=Nn) # g/cc
     Zbar0 = 20 # Estimated dZbar
     NE = rho0 / (A*ad.mp) * Zbar0 # 1/cm^3, Ne range
@@ -757,7 +941,35 @@ if __name__=='__main__':
     ad.saha_boltzmann(KT, NE)
     ad.saha_boltzmann_rho(rho_grid)
     
-    ad.get_opacity(1, 0, 2, 1)
+    # Generate spectra
+    # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'G')
+    ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'G')
+    ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'L')
+    # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'L')
+    ad.sum_linewidths()
+    linecenter = ad.get_linecenter()
+    
+    ad.get_line_opacity(1, 0, 2, 1)
+    
+    hnu_minmax = [ad.hnuarrs.flatten()[ad.hnuarrs.flatten()>0].min(),
+                  ad.hnuarrs.max()]
+    # hnu_axis = np.linspace(6400, 6800, num=1000)
+    hnu_axis = np.linspace(6665, 6680, num=1000)
+    # ls = ad.generate_lineshapes(hnu_axis)
+    
+    ad.generate_spectra(hnu_axis)
+    
+    rhoidx = -1
+    plt.figure()
+    plt.pcolormesh(ad.KT, hnu_axis, ad.kappa[:,rhoidx,:].T, shading='nearest',
+                   # cmap='viridis')
+                    cmap='gist_earth_r')
+    plt.gca().set(aspect='auto',
+                  xlabel='T (eV)',
+                  ylabel='hnu (eV)',
+                  title=r'$\kappa$ (cm$^2$/g) at {0:0.1f} g/cm$^3$'.format(rho_grid[rhoidx])
+                  )
+    plt.colorbar()
     
     if pf:
         fig, ax = plt.subplots(figsize=[4,3])
