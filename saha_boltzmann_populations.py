@@ -366,6 +366,9 @@ if __name__=='__main__':
                       xlim=[0.1,1000])
         plt.legend()
 
+# %% Fe Zbar
+
+
 # %% Spectrum
     if 0:
         # Extract data from each block for current charge state

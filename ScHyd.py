@@ -754,7 +754,7 @@ if __name__=='__main__':
         # Es = [5414, 5947, 5932, 7016]
         # [plt.axhline(E) for E in Es]
         
-    if 1: # Test oscillator strengths
+    if 0: # Test oscillator strengths
         Z = 1
         # isol = AvIon(36,0, nmax=10)
         isol = AvIon(Z,Zbar=0, nmax=10)
@@ -790,14 +790,15 @@ if __name__=='__main__':
             plt.title(CL)
         
         
-    if 0: # Test other Z
+    if 1: # Test other Z
         iter_scheme = '123' # Loop 1=gPQ, 2=PQWE, and/or 3=Z*
         # Z, Zbar, A = 8, 1, 16 # O
         # Z, Zbar, A = 24, 1, 52 #   cCr
         # Z, Zbar, A = 32, 1, 72 # Ge
         # Z, Zbar, A = 6, 1, 12 # C
-        # Z, Zbar, A = 1, 1, 1
-        Z, Zbar, A = 13, 1, 27
+        # Z, Zbar, A = 1, 1, 1 # H
+        # Z, Zbar, A = 13, 1, 27 # Al 
+        Z, Zbar, A = 79, 1, 196.97 # Au
         
         # Standard grid
         Ts = np.logspace(0,3.5, num=21) # eV
@@ -808,8 +809,8 @@ if __name__=='__main__':
         # rhos = np.linspace(1,10, num=21) # g/cc    
         
         # Single point
-        Ts = [500]
-        rhos = [50]
+        # Ts = [500]
+        # rhos = [50]
         
         grids = dense_plasma(Z, Zbar, A, Ts, rhos,
                              iter_scheme=iter_scheme, step=[0.5,0.5,0.5]) # Zbar, ...
