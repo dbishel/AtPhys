@@ -51,7 +51,7 @@ class AtDat():
         
         ##### Initialize data structures #####
         # Dict of dict of dict: En['up' or'lo'][Zbar][excitation degree]
-        dict_base = {'{0:d}'.format(item): {} for item in range(ZZ)}
+        dict_base = {'{0:d}'.format(item): {} for item in range(Z)}
         self.En = {item:deepcopy(dict_base) for item in ['up','lo']}  # Shell energies
         self.Pn = {item:deepcopy(dict_base) for item in ['up','lo']} # Shell populations
         self.gn = {item:deepcopy(dict_base) for item in ['up','lo']}  # Shell statistical weights
@@ -83,19 +83,19 @@ class AtDat():
         '''
 
         for uplo in['up','lo']:
-            for Zbar in range(Zbar_min, self.Z): # Start with neutral, end with H-like
+            for Zbar in range(self.Zbar_min, self.Z): # Start with neutral, end with H-like
                 Zbar_str = '{0:d}'.format(Zbar)
         
                 Nele = self.Z - Zbar
                 # Exlcude unphysical excitations, e.g. Li can only be 0- and 1-excited
-                valid_exc_list = [item for item in exc_list if item<(Nele-1)]
+                valid_exc_list = [item for item in self.exc_list if item<(Nele-1)]
                 for exc in valid_exc_list:
                     # Save quantities as list of lists for current charge state and excitation degree
                     Enx = [] # Shell energies
                     Pnx = [] # Shell populations
                     gnx = [] # Shell statistical weights
                     Etotx = [] # Total ion energy
-                    fn = DIR+'fac_{0:d}_{1:d}_{2:d}_{3:s}.txt'.format(Nele, nmax,
+                    fn = DIR+'fac_{0:d}_{1:d}_{2:d}_{3:s}.txt'.format(Nele, self.nmax,
                                                                       exc, uplo)
                     with open(fn, 'r') as file:
                         l = True
@@ -112,7 +112,7 @@ class AtDat():
                                 continue                
                             
                             # Initiate populations as all 0's
-                            Pni = np.zeros(nmax) # populations of current complex
+                            Pni = np.zeros(self.nmax) # populations of current complex
                             for shell, pop in np.array(m).astype(int): # Read one shell of the current complex at a time
                                 
                                 Pni[shell-1] = pop
@@ -422,18 +422,28 @@ class AtDat():
             return (eta / (np.pi*self.lineshape_tot['L']) \
                     + (1-eta) / np.sqrt(2*np.pi) / self.lineshape_tot['G'])       
     
-
-    def get_line_opacity(self,ni,li,nj,lj):
-        ''' Converts atomic data and SB populations into opacity at linecenter of each line.
+    def get_gf(self, ni, li, nj, lj):
+        ''' Calculates weighted oscillator strength, averaged over initial states
+            and summed over final states
         
+
+        Parameters
+        ----------
+        ni : int
+            Initial principal quantum number.
+        li : int
+            Initial angular momentum quantum number.
+        nj : int
+            Final principal quantum number.
+        lj : int
+            Final angular  momentumquantum number.
 
         Returns
         -------
-        None.
+        gf : array
+            Array of weighted oscillator strengths.
 
         '''
-        linecenter = self.get_linecenter() # 1/eV. Value of normalized line shape at line center. Used in xsec
-        # Get hydrogenic oscillator strength
         fH_dict = {'10':{'21':0.4162, # Key format: ni li, nj lj. ['10']['21'] is 1s -> 2p
                      '31':0.0791,
                      '41':0.0290,
@@ -483,6 +493,22 @@ class AtDat():
         
         # Sum over final states, and average over initial states
         gf = prefactor * fH
+        
+        return gf
+
+    def get_line_opacity(self,ni,li,nj,lj):
+        ''' Converts atomic data and SB populations into opacity at linecenter of each line.
+        
+
+        Returns
+        -------
+        None.
+
+        '''
+        linecenter = self.get_linecenter() # 1/eV. Value of normalized line shape at line center. Used in xsec
+        
+        # Get hydrogenic oscillator strength
+        gf = self.get_gf(ni, li, nj, lj)
         
         # Calculate cross-section of each transition. See Perez-Callejo JQSRT 202
         xsec = (2.6553e-06 / 2.41799e14) * gf * 1e4 # cm^2 eV. Prefactor = (e^2 / (4 epsilon_0) / me / c) * (eV/Hz) in mks
@@ -943,7 +969,9 @@ class AtDat():
                       ylabel='Population fraction')
         return
     
-    def gif_pop_hist_bar(self, Ts, rhos, bins, Zbar_plot=None):
+    def gif_pop_hist_bar(self, Ts, rhos, bins, Zbar_plot=None, 
+                         xbds=[None,None], ybds=[None,None],
+                         savename='./hist_bar.gif'):
         import imageio
 
         if Zbar_plot is None:
@@ -956,7 +984,11 @@ class AtDat():
             self.plot_pop_hist_bar(Tidx, rhoidx, bins)
             
             plt.gca().set(xlabel=r'h$\nu$ (eV)',
-                          ylabel='Population')
+                          ylabel='Population',
+                          xlim=xbds,
+                          ylim=ybds,
+                          title=r'T = {0:0.0f} eV, $\rho$ = {1:0.1f} g/cm$^3$'.format(self.KT[Tidx],
+                                                                                     self.rho_grid[rhoidx]))
             
             # Save frame to movie stack
             files.append(f'./img_{Tidx}_{rhoidx}.png')
@@ -972,13 +1004,13 @@ class AtDat():
                 os.remove(f)
 
         
-        imageio.mimsave('./hist_bar.gif', # output gif
+        imageio.mimsave(savename, # output gif
                 frames,          # array of input frames
                 fps = 5)         # optional: frames per second
 
    
     def gif_pops(self, Ts, rhos, Zbar_plot=None, scale='lin', cmap_name='rainbow',
-                 log_vminmax=[-3,0], xaxis='Zbar', savename='example.gif'):
+                 log_vminmax=[-3,0], xaxis='Zbar', savename='./example.gif'):
         import imageio
 
         if Zbar_plot is None:
@@ -1047,12 +1079,49 @@ class AtDat():
             if os.path.isfile(f):
                 os.remove(f)
 
-        imageio.mimsave('./'+savename, # output gif
+        imageio.mimsave(savename, # output gif
                 frames,          # array of input frames
                 fps = 5)         # optional: frames per second
         
         return
+    
+    def print_table(self):
+        ''' Prints formatted table of transition energies, oscillator strength, and upper/lower states
         
+
+        Returns
+        -------
+        None.
+
+        '''
+        
+        # Get weighted oscillator strengths
+        gf = self.get_gf(1,0,2,1)
+        
+        print('{0:5s} | {1:10s} | {2:10s} | {3:25s} | {4:25s} '.format(
+                'Zbar', 'hnu (eV)', 'gf', 'lo cfg', 'up cfg'))
+        for i,Zstr in enumerate(self.Zkeys):
+             # i,j = np.unravel_index(idx, ad.hnuarrs.shape)
+             
+             # Format configurations
+             lo_pops = []
+             [lo_pops.extend(item) for item in self.Pn['lo'][Zstr].values()]
+             # breakpoint()
+        
+             up_pops = []
+             [up_pops.extend(item) for item in self.Pn['lo'][Zstr].values()]
+             
+             for j in range(len(lo_pops)):
+                 lo = lo_pops[j]
+                 up = up_pops[j]
+                 
+                 # Keep only shells with non-zero population
+                 lo_config = ''.join(['{0:d}*{1:0.0f} '.format(shell+1, pop) for shell, pop in enumerate(lo) if pop])
+                 up_config = ''.join(['{0:d}*{1:0.0f} '.format(shell+1, pop) for shell, pop in enumerate(up) if pop])
+                 
+                 print('{0:5s} | {1:10.1f} | {2:10.2e} | {3:25s} | {4:25s} '.format(Zstr, self.hnuarrs[i,j], gf[i,j], lo_config, up_config))
+                
+            
 
         
 
@@ -1069,7 +1138,7 @@ if __name__=='__main__':
     nmax = 5 # Maximum allowed shell
     exc_list = [0,1,2,3] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
     # exc_list = [0,1] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
-    pf = 1
+    pf = 0
     
     # Run model
     ad = AtDat(ZZ, A, Zbar_min, nmax, exc_list,)
@@ -1114,15 +1183,32 @@ if __name__=='__main__':
     # hnu_axis = np.linspace(6665, 6680, num=1000)
     # ls = ad.generate_lineshapes(hnu_axis)
     
-    ad.generate_spectra(hnu_axis)
+    # ad.generate_spectra(hnu_axis)
     
+    ad.print_table()
+    
+    # Gifs
     gifT = np.arange(0,len(KT))
     gifrho = np.ones(len(KT), dtype=int)*-1
     
+    bins = np.arange(5400, 5800, 5)
     # ad.gif_pops(Ts=gifT, rhos=gifrho, scale='log')
-    # ad.gif_pop_hist_bar(Ts=gifT, rhos=gifrho, bins=np.arange(6400, 6750,5))
+    
+    # f0 = mpl.rcParams['font.size']
+    # mpl.rcParams['font.size'] = 14
+    # ad.gif_pop_hist_bar(Ts=gifT, rhos=gifrho, bins=bins,
+    #                     ybds=[0,1],
+    #                     savename='./hist_bar_test.gif')
+    # mpl.rcParams['font.size'] = f0
+
     
     if pf:
+        # Plot Saha at one condition
+        plt.figure()
+        plt.bar(x=ad.Zkeys, height=ad.psaha_rho[26,-1,:-1], color='w', edgecolor='k')
+        plt.gca().set(xlabel='Ionization',
+                      ylabel='Population')
+        
         # Plot transitions – He to B only
         # ad.plot_hnu([0], Zbar_plot=['24'], xaxis='Zbar')
         Zbar_plot = [ZZ-2,ZZ-3,ZZ-4,ZZ-5]
