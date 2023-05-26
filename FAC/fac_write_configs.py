@@ -295,6 +295,15 @@ def write_corevac_complex(nmax, Nele, exc, upper_state=True,
     LUS_idx = LUS - 2 # -1 for 0-register, -1 for ignoring n=1 in counts later
     
     ## New excitation degree. Reference against ground state
+    # Determine first shell which is not full in ground state
+    Pn_full = 2*np.arange(1,nmax+1)**2 # Shell populations if all full
+    epop_full = np.cumsum(Pn_full) # Total electrons inside and interior to shell
+    nmax_idx = np.where(epop_full>(Nele))[0][0] # First shell to not be full
+            
+    # Start with empty shells
+    GS = np.zeros_like(Pn_full)
+    GS[:nmax_idx] = Pn_full[:nmax_idx] # Assign full shells their proper value
+    GS[nmax_idx] = (Nele) - np.sum(GS) # Populate first unfilled shell with remaining electrons
 
     if overwrite:
         open_mode = 'w'
@@ -305,6 +314,11 @@ def write_corevac_complex(nmax, Nele, exc, upper_state=True,
             # Skip if excitation degree is allowed by user
             # Excitation degree defined by number of electrons in shells unoccupied in ground state
             exc_deg = np.sum(c[LUS_idx:]) # Degree of excitation (resonant, singly-excited, doubly-...)
+            
+            ## New excitation degree. Defined by number of electrons different from ground state GS
+            dpop = c - GS[1:] # Population difference wrt GS
+            exc_deg = np.sum(dpop[np.where(dpop>0)[0]]) # NEED exception for upper state
+            
             if exc_deg in exc: 
                 bf = False
                 # Construct upper, lower state n=1
@@ -321,8 +335,15 @@ def write_corevac_complex(nmax, Nele, exc, upper_state=True,
                     if pop>(2*shell**2):
                         bf = True # Set break flag to 'continue' outside this loop to prevent saving
                         break
-                    # elif (shell==active_shell) and ((pop+1)>(2*shell**2)): # pop+1 because active shell is given +1 later
-                    elif (upper_state) and (shell==active_shell) and ((pop+1)>(2*shell**2)): # pop+1 because active shell is given +1 later
+                    
+                    # Ignore complex if active shell in lower state is full, thus having no allowable upper state
+                    elif (not(upper_state)) and (shell==active_shell) and (pop==(2*shell**2)):
+                        bf = True
+                        break
+                    
+                    # Ignore complex if active shell in upper state exceeds maximum occupancy.
+                    # pop+1 because active shell of upper state is given +1 later
+                    elif (upper_state) and (shell==active_shell) and ((pop+1)>(2*shell**2)):
                         bf = True # Set break flag
                         break 
                         
@@ -361,27 +382,28 @@ if __name__=='__main__':
     # Filename: fac_NE_NMAX_EXC_lo/up.txt
     nmax = 5  # largest principal quantum number shell to consider
     # exc = np.arange(6) # Accepted degree of excitations. 0=resonance, 1=singly-excited, ...
-    exc_list = [0,1]
+    exc_list = [0,1,2,3]
     # exc_list = [3]
 
-    Nlist = np.arange(4,15)
-    Nlist = [10,11]
+    Nlist = np.arange(10,19)
+    # Nlist = [12]
+    # Nlist = [3,4,5,9,10,11,]
     for Nele in Nlist:
         
-        # fn = 'complexes/fac_{0:d}_{1:d}'.format(Nele,nmax)
-        fn = '/Users/dbis/Desktop/complexes/fac_{0:d}_{1:d}'.format(Nele,nmax)
+        fn = '../complexes/fac_{0:d}_{1:d}'.format(Nele,nmax)
+        # fn = '/Users/dbis/Desktop/complexes/fac_{0:d}_{1:d}'.format(Nele,nmax)
         
         for exc in exc_list:
-            breakpoint()
+            # breakpoint()
             write_corevac_complex(nmax, Nele, [exc],
                                   fn=fn+'_{0:d}_lo.txt'.format(exc),
                                   upper_state=False, overwrite=True,
                                   active_shell=2)
             
-            # write_corevac_complex(nmax, Nele, [exc],
-            #                       fn=fn+'_{0:d}_up.txt'.format(exc),
-            #                       upper_state=True, overwrite=True,
-            #                       active_shell=2)
+            write_corevac_complex(nmax, Nele, [exc],
+                                  fn=fn+'_{0:d}_up.txt'.format(exc),
+                                  upper_state=True, overwrite=True,
+                                  active_shell=2)
     
     
 # %%
