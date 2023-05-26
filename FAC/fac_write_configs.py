@@ -285,12 +285,16 @@ def write_corevac_complex(nmax, Nele, exc, upper_state=True,
     
     counts = all_counts(N,R) # [pi for i in range(2,R+1)], ignoring core 1s and active 2p electrons
     
+    
+    ## Old excitation degree
     HOS_ref = np.cumsum(2*np.arange(1,nmax+1)**2) # Reference to determine
                                         # highest occupied shell in ground state
     HOS = np.where(Nele <= HOS_ref)[0][0] + 1 # Highest occupied shell 
                                         # in ground state. Add 1 due to 0-register
     LUS = HOS + 1  # Lowest unoccupied shell
     LUS_idx = LUS - 2 # -1 for 0-register, -1 for ignoring n=1 in counts later
+    
+    ## New excitation degree. Reference against ground state
 
     if overwrite:
         open_mode = 'w'
@@ -317,7 +321,8 @@ def write_corevac_complex(nmax, Nele, exc, upper_state=True,
                     if pop>(2*shell**2):
                         bf = True # Set break flag to 'continue' outside this loop to prevent saving
                         break
-                    elif (shell==active_shell) and ((pop+1)>(2*shell**2)):
+                    # elif (shell==active_shell) and ((pop+1)>(2*shell**2)): # pop+1 because active shell is given +1 later
+                    elif (upper_state) and (shell==active_shell) and ((pop+1)>(2*shell**2)): # pop+1 because active shell is given +1 later
                         bf = True # Set break flag
                         break 
                         
@@ -356,24 +361,27 @@ if __name__=='__main__':
     # Filename: fac_NE_NMAX_EXC_lo/up.txt
     nmax = 5  # largest principal quantum number shell to consider
     # exc = np.arange(6) # Accepted degree of excitations. 0=resonance, 1=singly-excited, ...
-    exc_list = [0,1,2]
-    exc_list = [3]
+    exc_list = [0,1]
+    # exc_list = [3]
 
-    Nlist = np.arange(4,11)
+    Nlist = np.arange(4,15)
+    Nlist = [10,11]
     for Nele in Nlist:
         
-        fn = 'complexes/fac_{0:d}_{1:d}'.format(Nele,nmax)
+        # fn = 'complexes/fac_{0:d}_{1:d}'.format(Nele,nmax)
+        fn = '/Users/dbis/Desktop/complexes/fac_{0:d}_{1:d}'.format(Nele,nmax)
         
         for exc in exc_list:
+            breakpoint()
             write_corevac_complex(nmax, Nele, [exc],
                                   fn=fn+'_{0:d}_lo.txt'.format(exc),
                                   upper_state=False, overwrite=True,
                                   active_shell=2)
             
-            write_corevac_complex(nmax, Nele, [exc],
-                                  fn=fn+'_{0:d}_up.txt'.format(exc),
-                                  upper_state=True, overwrite=True,
-                                  active_shell=2)
+            # write_corevac_complex(nmax, Nele, [exc],
+            #                       fn=fn+'_{0:d}_up.txt'.format(exc),
+            #                       upper_state=True, overwrite=True,
+            #                       active_shell=2)
     
     
 # %%
