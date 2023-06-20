@@ -798,10 +798,11 @@ if __name__=='__main__':
         # Z, Zbar, A = 6, 1, 12 # C
         # Z, Zbar, A = 1, 1, 1 # H
         # Z, Zbar, A = 13, 1, 27 # Al 
+        # Z, Zbar, A = 47, 1, 107.87 # Ag
         Z, Zbar, A = 79, 1, 196.97 # Au
         
         # Standard grid
-        Ts = np.logspace(0,3.5, num=21) # eV
+        Ts = np.logspace(0,3.5, num=20) # eV
         rhos = np.logspace(-4,4, num=21) # g/cc
 
         # Zaire grid
@@ -814,6 +815,17 @@ if __name__=='__main__':
         
         grids = dense_plasma(Z, Zbar, A, Ts, rhos,
                              iter_scheme=iter_scheme, step=[0.5,0.5,0.5]) # Zbar, ...
+        
+        plt.figure(figsize=[3,2.5])
+        plt.pcolormesh(rhos,Ts, grids[0], shading='nearest')
+        plt.colorbar()
+        plt.contour(rhos, Ts, grids[0], levels=[Z-36,Z-18,Z-10,Z-2], colors='grey')
+        plt.gca().set(xscale='log',
+                      yscale='log',
+                      xlabel=r'$\rho$ (g/cm$^3$)',
+                      ylabel= '$T_e$ (eV)',
+                      )
+        
     if 0: # Saha not operational
         # Ts = np.array([500,1000])
         # rhos = np.array([10,20])

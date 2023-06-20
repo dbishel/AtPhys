@@ -1109,7 +1109,7 @@ class AtDat():
              # breakpoint()
         
              up_pops = []
-             [up_pops.extend(item) for item in self.Pn['lo'][Zstr].values()]
+             [up_pops.extend(item) for item in self.Pn['up'][Zstr].values()]
              
              for j in range(len(lo_pops)):
                  lo = lo_pops[j]
