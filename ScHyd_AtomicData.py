@@ -1138,7 +1138,7 @@ if __name__=='__main__':
     nmax = 5 # Maximum allowed shell
     exc_list = [0,1,2,3] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
     # exc_list = [0,1] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
-    pf = 0
+    pf = 1
     
     # Run model
     ad = AtDat(ZZ, A, Zbar_min, nmax, exc_list,)

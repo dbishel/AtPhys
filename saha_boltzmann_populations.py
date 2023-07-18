@@ -18,7 +18,7 @@ import sys                      # Used to put breaks/exits for debugging
 import itertools as it
 import pandas as pd
 
-def saha(ne, kT, Earrs, glists, Iplist, returns='csd'):
+def saha(ne, kT, Earrs, glists, Iplist, IPD=0, returns='csd'):
     """ Calculates Saha distribution of the given ion for a single ne, kT.
         Energy levels from a subset of charge states can be given
         Bare ion G (internal partition function) =1 is always appended.
@@ -40,6 +40,9 @@ def saha(ne, kT, Earrs, glists, Iplist, returns='csd'):
         last is of most ionized.
     include_bare : bool
         Option to append bare ion
+    IPD : float
+        Ionization potential depression, in eV. \
+        Effectively reduces ionization potential in Saha ratio.
     returns : str ('csd', 'Zbar', 'abs', 'all')
         Choice of what to return: \n
         - 'csd' : fractional populations n_j/n_tot
@@ -74,7 +77,8 @@ def saha(ne, kT, Earrs, glists, Iplist, returns='csd'):
     G.append(1)
     
     # Calculate Saha ratios r_j = n_j/n_j-1
-    r = [2/(ne*lam_th**3) * G[i]/G[i-1] * np.exp(-Iplist[i-1]/kT)
+    # r = [2/(ne*lam_th**3) * G[i]/G[i-1] * np.exp(-(Iplist[i-1] - IPD)/kT)
+    r = [2/(ne*lam_th**3) * G[i]/G[i-1] * np.exp(-np.max(Iplist[i-1] - IPD,0)/kT)
          for i in range(1,len(Earrs)+1)] # Start from i=0 for n_1/n_0
     
     # Calculate cumulative product of r_j = n_j/n_0 = c_j
