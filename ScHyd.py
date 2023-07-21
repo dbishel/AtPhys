@@ -180,21 +180,32 @@ class AvIon():
         
         
     #### Functions for dense plasma
-    def get_gn(self, rho, C=None):
-        '''Calculates gn from Zimmerman's empirical pressure ionization.
-            Calculates and saves Hydrogenic orbital radius Rn as a prerequisite
+    def get_gn(self, rho, C=None, CLmodel=None):
+        '''Calculates gn from Zimmerman's empirical pressure ionization. \
+            Calculates and saves Hydrogenic orbitaltpta radius Rn as a prerequisite
 
             Parameters
             ----------
             C : float
                 Step size towards new value of Pn, i.e. NEW = (1-C)*OLD + C*(CALCULATED)
+                
+            CLmodel : str or None
+                Continuum lowering model used. If None, use 2n^2 occupancy. \
+                For all continuum lowering models, reduce 2n^2 by Zimmerman's pressure ionization
         
         '''
-        a, b = [3, 4] # Parameters for Zimmerman's Pressure Ionization occupation function
-        R0 = (3*self.A*self.mp/4/np.pi/rho)**(1/3) # cm
-        self.Rn = self.a0 * self.n**2/self.Qn # cm
         
-        gn = 2*self.n**2 / (1+ (a*self.Rn/R0)**b)
+        self.Rn = self.a0 * self.n**2/self.Qn # cm
+        if CLmodel is None:
+            # If CL model is None, don't reduce occupancies
+            gn = 2*self.n**2
+            
+        else:
+            # If a CL model is used, reduce occupancies with Zimmerman's pressure ionization
+            a, b = [3, 4] # Parameters for Zimmerman's Pressure Ionization occupation function
+            R0 = (3*self.A*self.mp/4/np.pi/rho)**(1/3) # cm
+
+            gn = 2*self.n**2 / (1+ (a*self.Rn/R0)**b)
         
         if C:
             self.gn = (1-C)*self.gn + C*gn
@@ -223,6 +234,9 @@ class AvIon():
             
         elif model=='EK Hansen': # Ecker-Kroll CL presented in Hansen HEDP 2017
             dEc = (self.Zbar+1)**(4/3) * e_squared/R0
+            
+        elif model==None: # No CL. Emulates isolated atom ionization, Saha balance
+            dEc = 0
             
         if C:
             self.dEc = (1-C)*self.dEc + C*dEc
@@ -380,8 +394,10 @@ def dense_plasma(Z,Zbar,A,Ts, rhos, nmax=10, iter_scheme='123', step=[0.5,0.5,0.
         Determines how quickly the iteration converges for each loop.
         New values are NEW = (1-C)*OLD + C*(CALCULATED).
         The default is [0.5,0.5,0.5].
-    CL : str
-        Denotes Continuum Lowering model to use. Options: {'IS Atzeni', 'IS Hansen', 'EK Hansen'}
+    CL : str or None
+        Denotes Continuum Lowering model to use. Options: {'IS Atzeni', 'IS Hansen', 'EK Hansen', None}. \
+        If None, CL (IPD) is set to 0, and Zimmerman's pressure ionization occupancy factor is ignored,
+        i.e. gn is just 2n^2.
     vb : bool
         Verbose flag. If True, outputs extra information to console.
     pf : bool
@@ -454,7 +470,7 @@ def dense_plasma(Z,Zbar,A,Ts, rhos, nmax=10, iter_scheme='123', step=[0.5,0.5,0.
 
             dp.get_CL(rho, model=CL)
             dp.get_mu(kT,rho)
-            dp.get_gn(rho)
+            dp.get_gn(rho, CLmodel=CL)
             
             dp.get_Pn(kT)
             dp.get_Qn()
@@ -473,7 +489,7 @@ def dense_plasma(Z,Zbar,A,Ts, rhos, nmax=10, iter_scheme='123', step=[0.5,0.5,0.
                     ct+=1
 
                     gn, pn, qn = dp.gn, dp.Pn, dp.Qn
-                    dp.get_gn(rho, C=step[0])
+                    dp.get_gn(rho, C=step[0], CLmodel=CL)
                     dp.get_Pn(kT, C=step[0])
                     dp.get_Qn(C=step[0])
                     
