@@ -26,7 +26,8 @@ Replace ENVIRONMENT_NAME with what you want the environment to be named, and ENV
 
 `conda activate ENVIRONMENT_NAME`
 
-## References
+## Citing this project
+For any work that uses or is based on this project, please cite the associated DOI with the project (if on GitHub) and cite the article D. T. Bishel _et al._, "Toward constraint of ionization-potential depression models in a convergent geometry", HEDP (2023). See https://www.sciencedirect.com/journal/high-energy-density-physics for the full citation.
 
 ## Examples
 Multiple examples are included at the bottom of the main scripts `ScHyd.py` and `ScHyd_AtomicData.py`. These can be run by either copying to a new scritp, or by setting `if 0:` to `if 1:` at the top of whichever example you want to run and running the file.
