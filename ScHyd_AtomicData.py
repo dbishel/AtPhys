@@ -271,7 +271,7 @@ class AtDat():
         
         Zbar_rho = [] # Zbar regularly gridded against rho
         psaha_rho = np.zeros(shape=[self.NT,self.Nrho,len(self.Zkeys)+1]) # Normalization: np.sum(psaha, axis=-1) should = 1 everywhere
-        for i,t in enumerate(KT):
+        for i,t in enumerate(self.KT):
             Zbar_rho.append(np.interp(rho_grid, self.rho[i], self.Zbar[i]))
             for k in range(self.psaha.shape[-1]):
                 psaha_rho[i,:,k] = np.interp(rho_grid, self.rho[i], self.psaha[i,:,k]) 
@@ -422,7 +422,7 @@ class AtDat():
             return (eta / (np.pi*self.lineshape_tot['L']) \
                     + (1-eta) / np.sqrt(2*np.pi) / self.lineshape_tot['G'])       
     
-    def get_gf(self, ni, li, nj, lj):
+    def get_gf(self, ni, li, nj, lj, return_gs=False):
         ''' Calculates weighted oscillator strength, averaged over initial states
             and summed over final states
         
@@ -494,7 +494,10 @@ class AtDat():
         # Sum over final states, and average over initial states
         gf = prefactor * fH
         
-        return gf
+        if return_gs:
+            return gf, gi, gj
+        else:
+            return gf
 
     def get_line_opacity(self,ni,li,nj,lj):
         ''' Converts atomic data and SB populations into opacity at linecenter of each line.
