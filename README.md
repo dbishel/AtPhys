@@ -16,11 +16,12 @@ The set of required packages is fairly minimal:
 - matplotlib
 - pandas
 - scipy
+- openpyxl
 - jupyter (to run example notebook)
 
 A working environment is included in the examples folder. To install this environment, install Anaconda and run from the terminal
 
-`conda create -n ENVIRONMENT_NAME -f ENVIRONMENT.yml`
+`conda env create -n ENVIRONMENT_NAME -f ENVIRONMENT.yml`
 
 Replace ENVIRONMENT_NAME with what you want the environment to be named, and ENVIRONMENT.yml with the full name of the .yml file. Switch to the new environment with
 
