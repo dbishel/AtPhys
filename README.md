@@ -1,4 +1,5 @@
 # AtPhys
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10045187.svg)](https://doi.org/10.5281/zenodo.10045187)
 
 ## Description
 This project is a home for various atomic physics related scripts.
