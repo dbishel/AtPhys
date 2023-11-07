@@ -38,10 +38,10 @@ def read_tr_UTA(filename):
         block['GAUGE'], lines = _read_value(lines, int)
         block['MODE'], lines = _read_value(lines, int)
         # read the values
-        block['lower_index'] = np.zeros(ntrans, dtype=int)
-        block['lower_2J-1'] = np.zeros(ntrans, dtype=int)
         block['upper_index'] = np.zeros(ntrans, dtype=int)
         block['upper_2J-1'] = np.zeros(ntrans, dtype=int)
+        block['lower_index'] = np.zeros(ntrans, dtype=int)
+        block['lower_2J-1'] = np.zeros(ntrans, dtype=int)
         block['Delta E'] = np.zeros(ntrans, dtype=float) # Transition energy including energy correction
         block['sigma'] = np.zeros(ntrans, dtype=float) # Gaussian standard deviation. See 'DB_TR' in FAC manual
         block['gf'] = np.zeros(ntrans, dtype=float)
