@@ -64,7 +64,7 @@ class AtDat():
         self.lineshape_dict = {'G':[],
                                'L':[]}
                         
-    def get_atomicdata(self, DIR='complexes/', vb=False):
+    def get_atomicdata(self, DIR='complexes/', nllo=[1,0], nlup=[2,1], vb=False):
         ''' Calculates atomic data for each excited complex in given directory.
         
         Screened Hydrogenic model is run for each complex.
@@ -80,7 +80,15 @@ class AtDat():
         ----------
         DIR : str
             Location of FAC-formatted complex files
+        nllo : list
+            Two-element list of the lower state [n,l]. Provided now because 
+            upper and lower states are implicit in the specified file
+        nlup : list
+            Two-element list of the upper state [n,l]
         '''
+        
+        self.nllo = nllo
+        self.nlup = nlup
 
         for uplo in['up','lo']:
             for Zbar in range(self.Zbar_min, self.Z): # Start with neutral, end with H-like
@@ -125,7 +133,9 @@ class AtDat():
                             
                             sh.get_Wn()
                             sh.get_En()
-                            sh.get_statweight()
+                            sh.get_statweight() # Shell-resolved statweight, from all configurations, as needed for Saha
+                                                # Subtraction of configurations unavailable for transition (e.g. lower state 
+                                                # with full 2p) is handled in get_gf
                             sh.get_Etot()
                             
                             Enx.append(sh.En)
@@ -207,13 +217,14 @@ class AtDat():
             hnuarrs.append(tmphnu)
 
         # To enable slicing, 0-pad all state-resolved arrays
-        # 0 values in glists reslut in 0 contribution to partition functions, 0 effect on Saha-Boltzmann
+        # 0 values in gtot_lists reslut in 0 contribution to partition functions, 0 effect on Saha-Boltzmann
         # Pad no zeroes at beginning, out to max_length at end: pad_width = [(0, max_length-len(item))]
         max_length = max([len(item) for item in excarrs]) # Longest length array
         self.max_length = max_length
         self.Earrs   = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in Earrs]) 
         self.excarrs = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in excarrs])
-        self.glists  = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in glists])
+        self.gtot_lists  = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in glists]) 
+            # gtot = total statistical weight of all configuraitons, even those not available for transition.
         self.hnuarrs = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in hnuarrs])
 
         # Pad 1st dimension of Pnarrs only. Shape (Z, max_length, nmax)
@@ -241,7 +252,7 @@ class AtDat():
             
             #### Saha
             # Run Saha, with ne (in cm^-3) converted to m^-3. 
-            out = saha(ne*1e6, kT, self.Earrs, self.glists, self.Iplist, returns='csd') # Returns: p     
+            out = saha(ne*1e6, kT, self.Earrs, self.gtot_lists, self.Iplist, returns='csd') # Returns: p     
             psaha[i,j] = out # Normalization: np.sum(psaha, axis=-1) should = 1 everywhere
             
             # Calculate Zbar
@@ -250,7 +261,7 @@ class AtDat():
             #### Boltzmann – Ne grid
             # Run Boltzmann on each charge state
             pb = []
-            for Z,Earr,garr in zip(self.Zkeys, self.Earrs, self.glists):
+            for Z,Earr,garr in zip(self.Zkeys, self.Earrs, self.gtot_lists):
                 pb.append(boltzmann(Earr, garr, kT, normalize=True))
             
             pboltz[i,j] = np.array(pb)
@@ -284,7 +295,7 @@ class AtDat():
             kT, __ = items
             i, j = np.unravel_index(idx, shape=(self.NT,self.Nrho))
             p = []
-            for Z,Earr,garr in zip(self.Zkeys, self.Earrs, self.glists):
+            for Z,Earr,garr in zip(self.Zkeys, self.Earrs, self.gtot_lists):
                 p.append(boltzmann(Earr, garr, kT, normalize=True))
 
             pboltz_rho[i,j] = np.array(p)
@@ -422,21 +433,25 @@ class AtDat():
             return (eta / (np.pi*self.lineshape_tot['L']) \
                     + (1-eta) / np.sqrt(2*np.pi) / self.lineshape_tot['G'])       
     
-    def get_gf(self, ni, li, nj, lj, return_gs=False):
-        ''' Calculates weighted oscillator strength, averaged over initial states
-            and summed over final states
+    def get_gf(self, ni=None, li=None,
+                     nj=None, lj=None,
+                     return_gs=False):
+        ''' Calculates weighted oscillator strength, averaged over lower states i
+            and summed over final states j.
+            
+            By default, upper/lower states specified in get_atomicdata are used.
         
 
         Parameters
         ----------
         ni : int
-            Initial principal quantum number.
+            Lower principal quantum number.
         li : int
-            Initial angular momentum quantum number.
+            Lower angular momentum quantum number.
         nj : int
-            Final principal quantum number.
+            Upper principal quantum number.
         lj : int
-            Final angular  momentumquantum number.
+            Upper angular  momentumquantum number.
 
         Returns
         -------
@@ -444,6 +459,15 @@ class AtDat():
             Array of weighted oscillator strengths.
 
         '''
+        if ni is None:
+            ni=self.nllo[0]
+        if li is None:
+            li=self.nllo[1]
+        if nj is None:
+            nj=self.nlup[0]
+        if lj is None:
+            lj=self.nlup[1]
+        
         fH_dict = {'10':{'21':0.4162, # Key format: ni li, nj lj. ['10']['21'] is 1s -> 2p
                      '31':0.0791,
                      '41':0.0290,
