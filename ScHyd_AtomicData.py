@@ -435,7 +435,8 @@ class AtDat():
     
     def get_gf(self, ni=None, li=None,
                      nj=None, lj=None,
-                     return_gs=False):
+                     return_gs=False,
+                     old=False):
         ''' Calculates weighted oscillator strength, averaged over lower states i
             and summed over final states j.
             
@@ -480,40 +481,50 @@ class AtDat():
         fH = fH_dict['{0:d}{1:d}'.format(ni, li)]['{0:d}{1:d}'.format(nj, lj)]
         
         # Weight osc. str. pre-factor over configurations which actually allow the transition
-
-        # Lower state prefactor: w
-        # Permissible populations of initial lower active state.
-        # Range is from 1 (for at least one available) OR all other sub-shells full,
-        # to shell pop OR full sub-shell
-        r0 = np.maximum(1, self.Pnarrs[:,:,ni-1] - (2*ni**2-(4*li+2))).astype(int) # Range minimum
-        r1 = np.minimum(self.Pnarrs[:,:,ni-1], 4*li+2).astype(int) + 1 # range maximum. +1 for inclusive
-        gi = [] # Not truly statistical weight
-        for rr in zip(r0.flatten(),r1.flatten()):
-            tmp = []
-            for w in range(*rr):
-                tmp.append(w*comb(4*li+2, w))
-            gi.append(np.sum(tmp))
-        gi = np.array(gi).reshape(self.Pnarrs.shape[:-1])
+        if not(old): # Keep old until merge to allow comparison to previous calculation.
+            # 12/08/23 – start with shell-resolved g in self.gtot_lists, and subtract
+            # the number of states which don't allow the transition.
+            gi = []
+            gj = []
+            g_tot = []
+            prefactor = gi*gj/g_tot
+            
+        else: # Old version
         
-        # Upper state prefactor: (4*lj + 2 - w) / (4*lj + 2)
-        # Permissible populations of initial upper active state.
-        # Range is from 0 (for at least one hole) OR all other sub-shells full,
-        # to shell pop OR full sub-shell-1
-        r0 = np.maximum(0, self.Pnarrs[:,:,nj-1] - (2*nj**2-(4*lj+2))).astype(int) # Range minimum
-        r1 = np.minimum(self.Pnarrs[:,:,nj-1], 4*lj+2-1).astype(int) + 1 # range maximum. +1 for inclusive
-        gj = []
-        for rr in zip(r0.flatten(),r1.flatten()):
-            tmp = []
-            for w in range(*rr):
-                tmp.append((4*lj+2 - w) / (4*lj+2) * comb(4*lj+2, w))
-            gj.append(np.sum(tmp))
-        gj = np.array(gj).reshape(self.Pnarrs.shape[:-1])
 
-        # Total number of transitions
-        g_tot = comb(2*ni**2, self.Pnarrs[:,:,ni-1]) \
-              * comb(2*nj**2, self.Pnarrs[:,:,nj-1]) # Total possible transitions
-              
-        prefactor = gi*gj / g_tot
+            # Lower state prefactor: w
+            # Permissible populations of initial lower active state.
+            # Range is from 1 (for at least one available) OR all other sub-shells full,
+            # to shell pop OR full sub-shell
+            r0 = np.maximum(1, self.Pnarrs[:,:,ni-1] - (2*ni**2-(4*li+2))).astype(int) # Range minimum
+            r1 = np.minimum(self.Pnarrs[:,:,ni-1], 4*li+2).astype(int) + 1 # range maximum. +1 for inclusive
+            gi = [] # Not truly statistical weight
+            for rr in zip(r0.flatten(),r1.flatten()):
+                tmp = []
+                for w in range(*rr):
+                    tmp.append(w*comb(4*li+2, w))
+                gi.append(np.sum(tmp))
+            gi = np.array(gi).reshape(self.Pnarrs.shape[:-1])
+            
+            # Upper state prefactor: (4*lj + 2 - w) / (4*lj + 2)
+            # Permissible populations of initial upper active state.
+            # Range is from 0 (for at least one hole) OR all other sub-shells full,
+            # to shell pop OR full sub-shell-1
+            r0 = np.maximum(0, self.Pnarrs[:,:,nj-1] - (2*nj**2-(4*lj+2))).astype(int) # Range minimum
+            r1 = np.minimum(self.Pnarrs[:,:,nj-1], 4*lj+2-1).astype(int) + 1 # range maximum. +1 for inclusive
+            gj = []
+            for rr in zip(r0.flatten(),r1.flatten()):
+                tmp = []
+                for w in range(*rr):
+                    tmp.append((4*lj+2 - w) / (4*lj+2) * comb(4*lj+2, w))
+                gj.append(np.sum(tmp))
+            gj = np.array(gj).reshape(self.Pnarrs.shape[:-1])
+    
+            # Total number of transitions
+            g_tot = comb(2*ni**2, self.Pnarrs[:,:,ni-1]) \
+                  * comb(2*nj**2, self.Pnarrs[:,:,nj-1]) # Total possible transitions
+                  
+            prefactor = gi*gj / g_tot
         
         # Sum over final states, and average over initial states
         gf = prefactor * fH
