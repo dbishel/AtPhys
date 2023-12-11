@@ -21,8 +21,10 @@ import re
 sys.path.append('../')
 from ScHyd import get_ionization, AvIon
 from saha_boltzmann_populations import saha, boltzmann
+from ScHyd_AtomicData import AtDat
 
 
+# %% Total statweights
 Z = 24
 nmax = 5
 Nele = 6
@@ -75,4 +77,53 @@ for exc in [0,1,2]:
                 print(np.product(sh.statweight))
                 
     print('Sum: ', np.sum(all_sw)) # Print sum over all stat.weights in this excitation degree
-            
+        
+# %% Transition-valid statweights    
+ZZ = 24 # Nuclear charge
+A = 51.996 # Nucleon number
+
+Zbar_min = ZZ - 10
+nmax = 5 # Maximum allowed shell
+exc_list = [0,1,2,3] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+# exc_list = [0,1] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+pf = 1
+
+# Run model
+ad = AtDat(ZZ, A, Zbar_min, nmax, exc_list)
+# breakpoint()
+ad.get_atomicdata(vb=0,  DIR=DIR)
+ad.get_hnu(np.array(ad.Zkeys).astype(int))
+ad.tidy_arrays()
+
+# Print zero, positive, and negative elements in gtot
+print('-------------------------------------')
+print('{0:3s} | {1:5s} | {2:5s} | {3:5s} | {4:5s}'.format('cfg', '>0', '=0', '<0', 'size'))
+[print('{0:3s} | {1:5.0f} | {2:5.0f} | {3:5.0f} | {4:5.0f}'.format(item,
+                                          len(np.where(ad.gtot_lists[item]>0)[0]),
+                                          len(np.where(ad.gtot_lists[item]==0)[0]),
+                                          len(np.where(ad.gtot_lists[item]<0)[0]),
+                                          ad.gtot_lists[item].size
+                                          ))
+    for item in ['lo','up']];
+
+# breakpoint()
+gf, gi, gj = ad.get_gf(1,0,2,1,True,False)
+
+# Print zero, positive, and negative elements in gtot
+print('-------------------------------------')
+print('{0:3s} | {1:5s} | {2:5s} | {3:5s} | {4:5s}'.format('cfg', '>0', '=0', '<0', 'size'))
+[print('{0:3s} | {1:5.0f} | {2:5.0f} | {3:5.0f} | {4:5.0f}'.format(item,
+                                          len(np.where(ad.gtot_lists[item]>0)[0]),
+                                          len(np.where(ad.gtot_lists[item]==0)[0]),
+                                          len(np.where(ad.gtot_lists[item]<0)[0]),
+                                          ad.gtot_lists[item].size
+                                          ))
+    for item in ['lo','up']];
+
+# Ground-state Li, F
+print('State  g_lower g_upper')
+print('ground, Li:', gi[-2,0], gj[-2,0])
+print('ground, F:', gi[2,0], gj[2,0])
+
+# Excited, Li
+print('excited, Li:', gi[-2,1:4].sum(), gj[-2,1:4].sum())

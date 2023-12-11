@@ -175,64 +175,92 @@ class AtDat():
                                                                          self.Etot['lo'][Zbar_str][exc])] 
         return
     
-    def tidy_arrays(self, uplo='lo'):
+    def tidy_arrays(self):
         ''' Parses saved dictionaries into zero-padded arrays for use in Saha-Boltzmann
-        calculation
-        
-        Parameters
-        ----------
-        uplo : str
-            Option to save arrays of upper 'up' or lower 'lo' state.
+        calculation. Saves both up and lo states. gn of both needed for weighted
+        oscillator strength.
+        Least ionized first.
         '''
         
-        # Parse data into arrays
-        Earrs = [] # Array of total energy of each complex, sorted by charge state
-        excarrs = [] # Excitation degree of each complex, sorted by charge state
-        glists = [] # Total statistical weight of each complex, sorted by charge state
-        hnuarrs = [] # Transition energy of each 
-        Pnarrs = []
+
+        # Initialize output dictionaries
+        self.max_length = {}
+        self.Earrs = {}
+        self.excarrs = {}
+        self.gtot_lists = {}
+        self.hnuarrs = {}
+        self.Pnarrs = {}
+        
 
         # Zs = [Zkey for Zkey in list(Etot['lo'].keys()) if list(Etot['up'][Zkey].keys())] # Keep only calculated charge states
-        for Z in self.Zkeys:
-            # Save off energy levels, excitation degree, and stat.weight of each complex,
-            # grouped by ionization state
-            tmpEtot = []
-            tmpexc = []
-            tmpgn = []
-            tmphnu = []
-            tmpPn = []
-            for exc in list(self.Etot[uplo][Z].keys()):
-                N = len(self.Etot[uplo][Z][exc])
-                tmpEtot.extend(self.Etot[uplo][Z][exc])
-                [tmpexc.append(int(exc)) for item in range(N)]
-                [tmpgn.append(np.prod(item)) for item in self.gn[uplo][Z][exc]]
-                tmphnu.extend(self.hnu[Z][exc])
-
-                tmpPn.extend(self.Pn[uplo][Z][exc])
-                
-            Earrs.append(np.array(tmpEtot))
-            Pnarrs.append(np.array(tmpPn))
-            excarrs.append(np.array(tmpexc))
-            glists.append(tmpgn)
-            hnuarrs.append(tmphnu)
-
-        # To enable slicing, 0-pad all state-resolved arrays
-        # 0 values in gtot_lists reslut in 0 contribution to partition functions, 0 effect on Saha-Boltzmann
-        # Pad no zeroes at beginning, out to max_length at end: pad_width = [(0, max_length-len(item))]
-        max_length = max([len(item) for item in excarrs]) # Longest length array
-        self.max_length = max_length
-        self.Earrs   = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in Earrs]) 
-        self.excarrs = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in excarrs])
-        self.gtot_lists  = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in glists]) 
-            # gtot = total statistical weight of all configuraitons, even those not available for transition.
-        self.hnuarrs = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in hnuarrs])
-
-        # Pad 1st dimension of Pnarrs only. Shape (Z, max_length, nmax)
-        self.Pnarrs  = np.array([np.pad(item, [(0, max_length-len(item)), (0,0)], constant_values=int(0)) for item in Pnarrs]) 
+        for uplo in ['lo', 'up']:
+            # Parse data into arrays. Reset for upper/lower states
+            Earrs = [] # Array of total energy of each complex, sorted by charge state
+            excarrs = [] # Excitation degree of each complex, sorted by charge state
+            glists = [] # Total statistical weight of each complex, sorted by charge state
+            hnuarrs = [] # Transition energy of each 
+            Pnarrs = []
+            for Z in self.Zkeys:
+                # Save off energy levels, excitation degree, and stat.weight of each complex,
+                # grouped by ionization state
+                tmpEtot = []
+                tmpexc = []
+                tmpgn = []
+                tmphnu = []
+                tmpPn = []
+                for exc in list(self.Etot[uplo][Z].keys()):
+                    N = len(self.Etot[uplo][Z][exc])
+                    tmpEtot.extend(self.Etot[uplo][Z][exc])
+                    [tmpexc.append(int(exc)) for item in range(N)]
+                    # [tmpgn.append(np.prod(item)) for item in self.gn[uplo][Z][exc]]
+                    [tmpgn.append(item) for item in self.gn[uplo][Z][exc]] # Shell-resolved
+                    tmphnu.extend(self.hnu[Z][exc])
+    
+                    tmpPn.extend(self.Pn[uplo][Z][exc])
+                    
+                Earrs.append(np.array(tmpEtot))
+                Pnarrs.append(np.array(tmpPn))
+                excarrs.append(np.array(tmpexc))
+                glists.append(tmpgn)
+                hnuarrs.append(tmphnu)
+    
+            # To enable slicing, 0-pad all state-resolved arrays. Shape: [Number charge states, max_length]
+            # 0 values in gtot_lists reslut in 0 contribution to partition functions, 0 effect on Saha-Boltzmann
+            # Pad no zeroes at beginning, out to max_length at end: pad_width = [(0, max_length-len(item))]
+            max_length = max([len(item) for item in excarrs]) # Longest length array, i.e. maximum number of complexes for a given charge state
+            self.max_length[uplo] = max_length
+            self.Earrs[uplo]      = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in Earrs]) 
+            self.excarrs[uplo]    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in excarrs])
+            self.hnuarrs[uplo]    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in hnuarrs])
+    
+            # Shell-resoled quantities. Pad 1st dimension only. Shape (Z, max_length, nmax)
+            self.Pnarrs[uplo]     = np.array([np.pad(item, [(0, max_length-len(item)), (0,0)], constant_values=int(0)) for item in Pnarrs]) 
+            self.gtot_lists[uplo] = np.array([np.pad(item, [(0, max_length-len(item)), (0,0)], constant_values=int(0)) for item in glists]) 
+                # gtot = total statistical weight of each configuration, of each shell, even those not available for transition.
+                # Atom's total statweight = np.prod(self.gtot_lists['lo'], axis=-1)
 
         return
     
     def saha_boltzmann(self, KT, NE, IPD=0):
+        ''' Calculates Saha-Boltzmann balance using atomic data (energies, statweights)
+        of the lower state. Could include up/lo as an argument to allow user the choice
+        at run time
+        
+
+        Parameters
+        ----------
+        KT : List
+            Electron temperature, eV.
+        NE : List
+            Electron density, cm^-3.
+        IPD : TYPE, optional
+            Ionizaiton potential depression. The default is 0.
+
+        Returns
+        -------
+        None.
+
+        '''
         
         self.KT = KT
         self.NE = NE
@@ -243,16 +271,18 @@ class AtDat():
         Ip = get_ionization(self.Z, return_energy_levels=False) - IPD
         self.Iplist = [Ip[int(item)] for item in self.Zkeys]
 
+        g = np.prod(self.gtot_lists['lo'], axis=-1)
+
         Zbar = np.zeros(shape=[self.NT,self.Nn]) # Mean ionization state
         psaha = np.zeros(shape=[self.NT,self.Nn,len(self.Zkeys)+1]) # Saha charge state populations. Shape T, Ne, Z+1
-        pboltz = np.zeros(shape=[self.NT,self.Nn,len(self.Zkeys), self.max_length]) # Boltzmann state populations. Shape T, Ne, Z, state
+        pboltz = np.zeros(shape=[self.NT,self.Nn,len(self.Zkeys), self.max_length['lo']]) # Boltzmann state populations. Shape T, Ne, Z, state
         for idx, items in enumerate(it.product(KT,NE)):
             kT, ne = items
             i, j = np.unravel_index(idx, shape=(self.NT,self.Nn))
             
             #### Saha
             # Run Saha, with ne (in cm^-3) converted to m^-3. 
-            out = saha(ne*1e6, kT, self.Earrs, self.gtot_lists, self.Iplist, returns='csd') # Returns: p     
+            out = saha(ne*1e6, kT, self.Earrs['lo'], g, self.Iplist, returns='csd') # Returns: p     
             psaha[i,j] = out # Normalization: np.sum(psaha, axis=-1) should = 1 everywhere
             
             # Calculate Zbar
@@ -261,7 +291,7 @@ class AtDat():
             #### Boltzmann – Ne grid
             # Run Boltzmann on each charge state
             pb = []
-            for Z,Earr,garr in zip(self.Zkeys, self.Earrs, self.gtot_lists):
+            for Z,Earr,garr in zip(self.Zkeys, self.Earrs['lo'], g):
                 pb.append(boltzmann(Earr, garr, kT, normalize=True))
             
             pboltz[i,j] = np.array(pb)
@@ -290,12 +320,14 @@ class AtDat():
 
         #### Boltzmann – rho grid
         # Run Boltzmann on each charge state over rho grid
-        pboltz_rho = np.zeros(shape=[self.NT,self.Nrho,len(self.Zkeys), self.max_length]) # Shape T, Ne, Z, state
+        g = np.prod(self.gtot_lists['lo'], axis=-1)
+
+        pboltz_rho = np.zeros(shape=[self.NT,self.Nrho,len(self.Zkeys), self.max_length['lo']]) # Shape T, Ne, Z, state
         for idx, items in enumerate(it.product(self.KT,rho_grid)):
             kT, __ = items
             i, j = np.unravel_index(idx, shape=(self.NT,self.Nrho))
             p = []
-            for Z,Earr,garr in zip(self.Zkeys, self.Earrs, self.gtot_lists):
+            for Z,Earr,garr in zip(self.Zkeys, self.Earrs['lo'], g):
                 p.append(boltzmann(Earr, garr, kT, normalize=True))
 
             pboltz_rho[i,j] = np.array(p)
@@ -484,10 +516,59 @@ class AtDat():
         if not(old): # Keep old until merge to allow comparison to previous calculation.
             # 12/08/23 – start with shell-resolved g in self.gtot_lists, and subtract
             # the number of states which don't allow the transition.
-            gi = []
-            gj = []
-            g_tot = []
-            prefactor = gi*gj/g_tot
+            gi0 = self.gtot_lists['lo'] # Lower state. Shape: [Number charge states, max_length]
+            gj0 = self.gtot_lists['up']
+            
+            # Create copies
+            gi = 1*gi0.astype(int)
+            gj = 1*gj0.astype(int)
+
+            # Remove states which will not allow transition from the relevant shell's statweight.
+            #  Because only shell populations are specified, some configurations are not allowed.
+            # Ex: Pn=6 can have a full 2p orbital, which won't allow 1s-2p
+            
+            # Lower state (lo), upper orbital (nj,lj): upper orbital must have 1 vacancy.
+            # Subtract states with full occupancy in upper orbital
+            #     (vacancy required for transition to occur)
+            # Only applicable if Pn >= 2(2l+1)
+            pop = self.Pnarrs['lo'][Ellipsis,nj-1]
+            cond = (pop >= 2*(2*lj+1)) # Possible violation of vacancy condition if population is large enough
+            gi[cond,nj-1] = gi[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
+                                                  pop[cond] - 2*(2*lj + 1))
+            
+            # Lower state (lo), lower orbital (ni,li): configurations must have at least one occupancy
+            # Subtract states with full vacancy in lower orbital
+            # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
+            pop = self.Pnarrs['lo'][Ellipsis,ni-1]
+            cond = (pop > 0) * (pop <= (2*ni**2 - 2*(2*li+1)) ) # Possible violation of occupancy condition if population is small enough
+            gi[cond,ni-1] = gi[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
+                                                  pop[cond])
+
+            # Upper state (up), upper orbital (nj,lj): configurations which have unocuppied upper orbital
+            #     (At least 1 occupancy required for transition to have occurred)
+            # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
+            pop = self.Pnarrs['up'][Ellipsis,nj-1]
+            cond = (pop > 0) * (pop <= (2*nj**2 - 2*(2*lj+1)) ) # 
+            gj[cond,nj-1] = gj[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
+                                                  pop[cond])
+            
+            # Upper state (up) lower orbital (ni,li): configs must have at least one vacancy
+            # Subtract states with full occupancy in lower orbital
+            pop = self.Pnarrs['up'][Ellipsis,ni-1]
+            cond = (pop >= 2*(2*li+1)) # Possible violation of vacancy condition if population is large enough
+            gj[cond,ni-1] = gj[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
+                                                  pop[cond] - 2*(2*li + 1))
+
+            # Having removed invalid states from shells, construct total configuration statweights
+            gi = np.prod(gi, axis=-1)
+            gj = np.prod(gj, axis=-1)
+            
+            prefactor = 1
+            
+            # Form from old. May need to remove
+            # g_tot = []
+            # prefactor = gi*gj/g_tot
+            
             
         else: # Old version
         
@@ -496,33 +577,33 @@ class AtDat():
             # Permissible populations of initial lower active state.
             # Range is from 1 (for at least one available) OR all other sub-shells full,
             # to shell pop OR full sub-shell
-            r0 = np.maximum(1, self.Pnarrs[:,:,ni-1] - (2*ni**2-(4*li+2))).astype(int) # Range minimum
-            r1 = np.minimum(self.Pnarrs[:,:,ni-1], 4*li+2).astype(int) + 1 # range maximum. +1 for inclusive
+            r0 = np.maximum(1, self.Pnarrs['lo'][:,:,ni-1] - (2*ni**2-(4*li+2))).astype(int) # Range minimum
+            r1 = np.minimum(self.Pnarrs['lo'][:,:,ni-1], 4*li+2).astype(int) + 1 # range maximum. +1 for inclusive
             gi = [] # Not truly statistical weight
             for rr in zip(r0.flatten(),r1.flatten()):
                 tmp = []
                 for w in range(*rr):
                     tmp.append(w*comb(4*li+2, w))
                 gi.append(np.sum(tmp))
-            gi = np.array(gi).reshape(self.Pnarrs.shape[:-1])
+            gi = np.array(gi).reshape(self.Pnarrs['lo'].shape[:-1])
             
             # Upper state prefactor: (4*lj + 2 - w) / (4*lj + 2)
             # Permissible populations of initial upper active state.
             # Range is from 0 (for at least one hole) OR all other sub-shells full,
             # to shell pop OR full sub-shell-1
-            r0 = np.maximum(0, self.Pnarrs[:,:,nj-1] - (2*nj**2-(4*lj+2))).astype(int) # Range minimum
-            r1 = np.minimum(self.Pnarrs[:,:,nj-1], 4*lj+2-1).astype(int) + 1 # range maximum. +1 for inclusive
+            r0 = np.maximum(0, self.Pnarrs['lo'][:,:,nj-1] - (2*nj**2-(4*lj+2))).astype(int) # Range minimum
+            r1 = np.minimum(self.Pnarrs['lo'][:,:,nj-1], 4*lj+2-1).astype(int) + 1 # range maximum. +1 for inclusive
             gj = []
             for rr in zip(r0.flatten(),r1.flatten()):
                 tmp = []
                 for w in range(*rr):
                     tmp.append((4*lj+2 - w) / (4*lj+2) * comb(4*lj+2, w))
                 gj.append(np.sum(tmp))
-            gj = np.array(gj).reshape(self.Pnarrs.shape[:-1])
+            gj = np.array(gj).reshape(self.Pnarrs['lo'].shape[:-1])
     
             # Total number of transitions
-            g_tot = comb(2*ni**2, self.Pnarrs[:,:,ni-1]) \
-                  * comb(2*nj**2, self.Pnarrs[:,:,nj-1]) # Total possible transitions
+            g_tot = comb(2*ni**2, self.Pnarrs['lo'][:,:,ni-1]) \
+                  * comb(2*nj**2, self.Pnarrs['lo'][:,:,nj-1]) # Total possible transitions
                   
             prefactor = gi*gj / g_tot
         
@@ -546,7 +627,7 @@ class AtDat():
         linecenter = self.get_linecenter() # 1/eV. Value of normalized line shape at line center. Used in xsec
         
         # Get hydrogenic oscillator strength
-        gf = self.get_gf(ni, li, nj, lj)
+        gf = self.get_gf(ni, li, nj, lj, old=False)
         
         # Calculate cross-section of each transition. See Perez-Callejo JQSRT 202
         xsec = (2.6553e-06 / 2.41799e14) * gf * 1e4 # cm^2 eV. Prefactor = (e^2 / (4 epsilon_0) / me / c) * (eV/Hz) in mks
@@ -1134,7 +1215,7 @@ class AtDat():
         '''
         
         # Get weighted oscillator strengths
-        gf = self.get_gf(1,0,2,1)
+        gf = self.get_gf(1,0,2,1, old=True)
         
         print('{0:5s} | {1:10s} | {2:10s} | {3:25s} | {4:25s} '.format(
                 'Zbar', 'hnu (eV)', 'gf', 'lo cfg', 'up cfg'))
@@ -1157,7 +1238,7 @@ class AtDat():
                  lo_config = ''.join(['{0:d}*{1:0.0f} '.format(shell+1, pop) for shell, pop in enumerate(lo) if pop])
                  up_config = ''.join(['{0:d}*{1:0.0f} '.format(shell+1, pop) for shell, pop in enumerate(up) if pop])
                  
-                 print('{0:5s} | {1:10.1f} | {2:10.2e} | {3:25s} | {4:25s} '.format(Zstr, self.hnuarrs[i,j], gf[i,j], lo_config, up_config))
+                 print('{0:5s} | {1:10.1f} | {2:10.2e} | {3:25s} | {4:25s} '.format(Zstr, self.hnuarrs['lo'][i,j], gf[i,j], lo_config, up_config))
                 
             
 
@@ -1182,7 +1263,9 @@ if __name__=='__main__':
     ad = AtDat(ZZ, A, Zbar_min, nmax, exc_list,)
     ad.get_atomicdata(vb=0)
     ad.get_hnu(np.array(ad.Zkeys).astype(int))
-    ad.tidy_arrays('lo')
+    ad.tidy_arrays()
+    
+    sys.exit()
     
     # Define T, Ne, rho grids for SB
     # Nn, NT = 10, 11 # Number of density, temperature gridpoints
@@ -1214,8 +1297,8 @@ if __name__=='__main__':
     
     ad.get_line_opacity(1, 0, 2, 1)
     
-    hnu_minmax = [ad.hnuarrs.flatten()[ad.hnuarrs.flatten()>0].min(),
-                  ad.hnuarrs.max()]
+    hnu_minmax = [ad.hnuarrs['lo'].flatten()[ad.hnuarrs['lo'].flatten()>0].min(),
+                  ad.hnuarrs['lo'].max()]
     hnu_axis = np.linspace(5400, 5800, num=2000)
     # hnu_axis = np.linspace(6400, 6800, num=2000)
     # hnu_axis = np.linspace(6665, 6680, num=1000)
