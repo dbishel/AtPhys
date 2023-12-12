@@ -243,7 +243,7 @@ class AtDat():
     
     def saha_boltzmann(self, KT, NE, IPD=0):
         ''' Calculates Saha-Boltzmann balance using atomic data (energies, statweights)
-        of the lower state. Could include up/lo as an argument to allow user the choice
+        of the lower state. In future could include up/lo as an argument to allow user the choice
         at run time
         
 
@@ -299,6 +299,8 @@ class AtDat():
         # Save out values
         self.psaha = psaha
         self.pboltz = pboltz
+        self.pstate = pboltz * psaha[Ellipsis,:-1, np.newaxis]  # Shape: T, rho, Z, state
+
         self.Zbar = Zbar
         
         self.rho = NE/Zbar * self.A * self.mp # g/cm^3. Ne in 1/cm^3, mp in g
@@ -614,7 +616,71 @@ class AtDat():
             return gf, gi, gj
         else:
             return gf
+        
+    def get_hnu_average(self, pops, gf, uplo='lo', resolve='line'):
+        ''' Calculate population and gf-averaged line center, resolved by line
+        complex or by ionization state.
+        
 
+        Parameters
+        ----------
+        pops : array
+            Shape (NT,Nrho, ionization, Nconfig) array of populations.
+        gf : array
+            Shape (ionization, Nconfig) array of weighted oscillator strengths.
+        uplo : str, optional
+            Choice of whether upper or lower states are used. The default is 'lo'.
+        resolve : str, optional
+            Method for averaging. \n
+            - If 'ionization', average hnu is resolved by excitation degree and ionization state.
+            - If 'line', average is grouped within line complexes, grouping \
+            more-highly excitated states of less-ionized states (which occur at \
+            similar photon energies). The default is 'line'.
+
+        Returns
+        -------
+        hnu_avg : array
+            Array of line centers.n
+            - If 'ionization', shape (NT, Nrho, ionization, Nconfig) 
+            - If 'line', shape (NT, Nrho, ionization), one for each line complex
+
+        '''
+        hnu_avg = []
+        if resolve=='ionization':
+            # Return ionization and excitation resolved line centers
+            for exc in self.exc_list:
+                cond = self.excarrs[uplo]==exc
+                
+                # Sum over allowed conditions, once for each ionization state
+                tmp = np.array([np.sum((self.hnuarrs[uplo]*pops*gf)[Ellipsis,i,c], axis=-1) \
+                                / np.sum( (pops*gf)[Ellipsis,i,c], axis=-1)
+                                for i,c in enumerate(cond)]) # Shape [ionization, NT, Nrho]
+                tmp = np.moveaxis(tmp, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
+                
+                hnu_avg.append(tmp)
+            hnu_avg = np.array(hnu_avg)
+            
+        elif resolve=='line':
+            # Return line-complex resolved line centers
+            for zidx in range(pops.shape[2]):
+                tmp_pgf = np.zeros([*pops.shape[:2],0])
+                tmp_hnu = []
+                for exc in self.exc_list:
+                    cond = self.excarrs[uplo][zidx]==exc
+                    
+                    if (zidx-exc)>=0:
+                        tmp_hnu.extend(self.hnuarrs[uplo][zidx-exc,cond]) # Lower ionization, higher excitation
+                        tmp_pgf = np.dstack([tmp_pgf, (pops*gf)[:,:,zidx,cond]])
+                        
+                # Sum over allowed conditions, once for each ionization state
+                hnu_avg.append(np.sum(tmp_hnu*tmp_pgf, axis=-1) \
+                               / np.sum(tmp_pgf, axis=-1)) # Shape [ionization, NT, Nrho]
+                
+            hnu_avg = np.moveaxis(hnu_avg, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
+            
+        return hnu_avg
+        
+        
     def get_line_opacity(self,ni,li,nj,lj):
         ''' Converts atomic data and SB populations into opacity at linecenter of each line.
         
