@@ -502,9 +502,11 @@ class AtDat():
             nj=self.nlup[0]
         if lj is None:
             lj=self.nlup[1]
-        
-        fH_dict = {'10':{'21':0.4162, # Key format: ni li, nj lj. ['10']['21'] is 1s -> 2p
-                     '31':0.0791,
+            
+        # Key format: ni li, nj lj. ['10']['21'] is absorption 1s -> 2p
+        # Emision oscillator strengths are negative. See Mayer Table Ia for more terms.
+        fH_dict = {'10':{'21':0.4162, 
+                     '31':0.0791,     
                      '41':0.0290,
                      '51':0.0139,
                      '61':0.0078,
@@ -565,16 +567,10 @@ class AtDat():
             gi = np.prod(gi, axis=-1)
             gj = np.prod(gj, axis=-1)
             
-            prefactor = 1
-            
-            # Form from old. May need to remove
-            # g_tot = []
-            # prefactor = gi*gj/g_tot
-            
+            # Construct weighted oscillator strength by summing over initial statweight
+            gf = gi * fH
             
         else: # Old version
-        
-
             # Lower state prefactor: w
             # Permissible populations of initial lower active state.
             # Range is from 1 (for at least one available) OR all other sub-shells full,
@@ -609,15 +605,15 @@ class AtDat():
                   
             prefactor = gi*gj / g_tot
         
-        # Sum over final states, and average over initial states
-        gf = prefactor * fH
+            # Sum over final states, and average over initial states
+            gf = prefactor * fH
         
         if return_gs:
             return gf, gi, gj
         else:
             return gf
         
-    def get_hnu_average(self, pops, gf, uplo='lo', resolve='line'):
+    def get_hnu_average(self, pops, gf, uplo='lo', resolve='line', return_weight=False):
         ''' Calculate population and gf-averaged line center, resolved by line
         complex or by ionization state.
         
@@ -636,6 +632,9 @@ class AtDat():
             - If 'line', average is grouped within line complexes, grouping \
             more-highly excitated states of less-ionized states (which occur at \
             similar photon energies). The default is 'line'.
+        return_weight : bool
+            If True, returns the summed product of gf x pops, i.e. the weighting
+            factor for average hnu.
 
         Returns
         -------
@@ -662,21 +661,24 @@ class AtDat():
             
         elif resolve=='line':
             # Return line-complex resolved line centers
+            pgf = []
             for zidx in range(pops.shape[2]):
                 tmp_pgf = np.zeros([*pops.shape[:2],0])
                 tmp_hnu = []
                 for exc in self.exc_list:
-                    cond = self.excarrs[uplo][zidx]==exc
-                    
                     if (zidx-exc)>=0:
+                        cond = self.excarrs[uplo][zidx-exc]==exc                    
                         tmp_hnu.extend(self.hnuarrs[uplo][zidx-exc,cond]) # Lower ionization, higher excitation
                         tmp_pgf = np.dstack([tmp_pgf, (pops*gf)[:,:,zidx,cond]])
-                        
+
                 # Sum over allowed conditions, once for each ionization state
                 hnu_avg.append(np.sum(tmp_hnu*tmp_pgf, axis=-1) \
                                / np.sum(tmp_pgf, axis=-1)) # Shape [ionization, NT, Nrho]
-                
+                pgf.append(np.sum(tmp_pgf, axis=-1))
             hnu_avg = np.moveaxis(hnu_avg, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
+            pgf = np.moveaxis(pgf, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
+            if return_weight:
+                return hnu_avg, pgf
             
         return hnu_avg
         
@@ -693,7 +695,7 @@ class AtDat():
         linecenter = self.get_linecenter() # 1/eV. Value of normalized line shape at line center. Used in xsec
         
         # Get hydrogenic oscillator strength
-        gf = self.get_gf(ni, li, nj, lj, old=False)
+        gf = self.get_gf(ni, li, nj, lj)
         
         # Calculate cross-section of each transition. See Perez-Callejo JQSRT 202
         xsec = (2.6553e-06 / 2.41799e14) * gf * 1e4 # cm^2 eV. Prefactor = (e^2 / (4 epsilon_0) / me / c) * (eV/Hz) in mks
@@ -1281,7 +1283,7 @@ class AtDat():
         '''
         
         # Get weighted oscillator strengths
-        gf = self.get_gf(1,0,2,1, old=True)
+        gf = self.get_gf(1,0,2,1)
         
         print('{0:5s} | {1:10s} | {2:10s} | {3:25s} | {4:25s} '.format(
                 'Zbar', 'hnu (eV)', 'gf', 'lo cfg', 'up cfg'))
