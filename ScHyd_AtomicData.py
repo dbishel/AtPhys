@@ -517,97 +517,58 @@ class AtDat():
         fH = fH_dict['{0:d}{1:d}'.format(ni, li)]['{0:d}{1:d}'.format(nj, lj)]
         
         # Weight osc. str. pre-factor over configurations which actually allow the transition
-        if not(old): # Keep old until merge to allow comparison to previous calculation.
-            # 12/08/23 – start with shell-resolved g in self.gtot_lists, and subtract
-            # the number of states which don't allow the transition.
-            gi0 = self.gtot_lists['lo'] # Lower state. Shape: [Number charge states, max_length]
-            gj0 = self.gtot_lists['up']
-            
-            # Create copies
-            gi = 1*gi0.astype(int)
-            gj = 1*gj0.astype(int)
-
-            # Remove states which will not allow transition from the relevant shell's statweight.
-            #  Because only shell populations are specified, some configurations are not allowed.
-            # Ex: Pn=6 can have a full 2p orbital, which won't allow 1s-2p
-            
-            # Lower state (lo), upper orbital (nj,lj): upper orbital must have 1 vacancy.
-            # Subtract states with full occupancy in upper orbital
-            #     (vacancy required for transition to occur)
-            # Only applicable if Pn >= 2(2l+1)
-            pop = self.Pnarrs['lo'][Ellipsis,nj-1]
-            cond = (pop >= 2*(2*lj+1)) # Possible violation of vacancy condition if population is large enough
-            gi[cond,nj-1] = gi[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
-                                                  pop[cond] - 2*(2*lj + 1))
-            
-            # Lower state (lo), lower orbital (ni,li): configurations must have at least one occupancy
-            # Subtract states with full vacancy in lower orbital
-            # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
-            pop = self.Pnarrs['lo'][Ellipsis,ni-1]
-            cond = (pop > 0) * (pop <= (2*ni**2 - 2*(2*li+1)) ) # Possible violation of occupancy condition if population is small enough
-            gi[cond,ni-1] = gi[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
-                                                  pop[cond])
-
-            # Upper state (up), upper orbital (nj,lj): configurations which have unocuppied upper orbital
-            #     (At least 1 occupancy required for transition to have occurred)
-            # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
-            pop = self.Pnarrs['up'][Ellipsis,nj-1]
-            cond = (pop > 0) * (pop <= (2*nj**2 - 2*(2*lj+1)) ) # 
-            gj[cond,nj-1] = gj[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
-                                                  pop[cond])
-            
-            # Upper state (up) lower orbital (ni,li): configs must have at least one vacancy
-            # Subtract states with full occupancy in lower orbital
-            pop = self.Pnarrs['up'][Ellipsis,ni-1]
-            cond = (pop >= 2*(2*li+1)) # Possible violation of vacancy condition if population is large enough
-            gj[cond,ni-1] = gj[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
-                                                  pop[cond] - 2*(2*li + 1))
-
-            # Having removed invalid states from shells, construct total configuration statweights
-            gi = np.prod(gi, axis=-1)
-            gj = np.prod(gj, axis=-1)
-            
-            # Construct weighted oscillator strength by summing over initial statweight
-            gf = gi * fH
-            
-        else: # Old version
-            # Lower state prefactor: w
-            # Permissible populations of initial lower active state.
-            # Range is from 1 (for at least one available) OR all other sub-shells full,
-            # to shell pop OR full sub-shell
-            r0 = np.maximum(1, self.Pnarrs['lo'][:,:,ni-1] - (2*ni**2-(4*li+2))).astype(int) # Range minimum
-            r1 = np.minimum(self.Pnarrs['lo'][:,:,ni-1], 4*li+2).astype(int) + 1 # range maximum. +1 for inclusive
-            gi = [] # Not truly statistical weight
-            for rr in zip(r0.flatten(),r1.flatten()):
-                tmp = []
-                for w in range(*rr):
-                    tmp.append(w*comb(4*li+2, w))
-                gi.append(np.sum(tmp))
-            gi = np.array(gi).reshape(self.Pnarrs['lo'].shape[:-1])
-            
-            # Upper state prefactor: (4*lj + 2 - w) / (4*lj + 2)
-            # Permissible populations of initial upper active state.
-            # Range is from 0 (for at least one hole) OR all other sub-shells full,
-            # to shell pop OR full sub-shell-1
-            r0 = np.maximum(0, self.Pnarrs['lo'][:,:,nj-1] - (2*nj**2-(4*lj+2))).astype(int) # Range minimum
-            r1 = np.minimum(self.Pnarrs['lo'][:,:,nj-1], 4*lj+2-1).astype(int) + 1 # range maximum. +1 for inclusive
-            gj = []
-            for rr in zip(r0.flatten(),r1.flatten()):
-                tmp = []
-                for w in range(*rr):
-                    tmp.append((4*lj+2 - w) / (4*lj+2) * comb(4*lj+2, w))
-                gj.append(np.sum(tmp))
-            gj = np.array(gj).reshape(self.Pnarrs['lo'].shape[:-1])
-    
-            # Total number of transitions
-            g_tot = comb(2*ni**2, self.Pnarrs['lo'][:,:,ni-1]) \
-                  * comb(2*nj**2, self.Pnarrs['lo'][:,:,nj-1]) # Total possible transitions
-                  
-            prefactor = gi*gj / g_tot
+        # 12/08/23 – start with shell-resolved g in self.gtot_lists, and subtract
+        # the number of states which don't allow the transition.
+        gi0 = self.gtot_lists['lo'] # Lower state. Shape: [Number charge states, max_length]
+        gj0 = self.gtot_lists['up']
         
-            # Sum over final states, and average over initial states
-            gf = prefactor * fH
+        # Create copies
+        gi = 1*gi0.astype(int)
+        gj = 1*gj0.astype(int)
+
+        # Remove states which will not allow transition from the relevant shell's statweight.
+        #  Because only shell populations are specified, some configurations are not allowed.
+        # Ex: Pn=6 can have a full 2p orbital, which won't allow 1s-2p
         
+        # Lower state (lo), upper orbital (nj,lj): upper orbital must have 1 vacancy.
+        # Subtract states with full occupancy in upper orbital
+        #     (vacancy required for transition to occur)
+        # Only applicable if Pn >= 2(2l+1)
+        pop = self.Pnarrs['lo'][Ellipsis,nj-1]
+        cond = (pop >= 2*(2*lj+1)) # Possible violation of vacancy condition if population is large enough
+        gi[cond,nj-1] = gi[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
+                                              pop[cond] - 2*(2*lj + 1))
+        
+        # Lower state (lo), lower orbital (ni,li): configurations must have at least one occupancy
+        # Subtract states with full vacancy in lower orbital
+        # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
+        pop = self.Pnarrs['lo'][Ellipsis,ni-1]
+        cond = (pop > 0) * (pop <= (2*ni**2 - 2*(2*li+1)) ) # Possible violation of occupancy condition if population is small enough
+        gi[cond,ni-1] = gi[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
+                                              pop[cond])
+
+        # Upper state (up), upper orbital (nj,lj): configurations which have unocuppied upper orbital
+        #     (At least 1 occupancy required for transition to have occurred)
+        # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
+        pop = self.Pnarrs['up'][Ellipsis,nj-1]
+        cond = (pop > 0) * (pop <= (2*nj**2 - 2*(2*lj+1)) ) # 
+        gj[cond,nj-1] = gj[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
+                                              pop[cond])
+        
+        # Upper state (up) lower orbital (ni,li): configs must have at least one vacancy
+        # Subtract states with full occupancy in lower orbital
+        pop = self.Pnarrs['up'][Ellipsis,ni-1]
+        cond = (pop >= 2*(2*li+1)) # Possible violation of vacancy condition if population is large enough
+        gj[cond,ni-1] = gj[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
+                                              pop[cond] - 2*(2*li + 1))
+
+        # Having removed invalid states from shells, construct total configuration statweights
+        gi = np.prod(gi, axis=-1)
+        gj = np.prod(gj, axis=-1)
+        
+        # Construct weighted oscillator strength by summing over initial statweight
+        gf = gi * fH
+                    
         if return_gs:
             return gf, gi, gj
         else:
