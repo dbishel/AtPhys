@@ -163,12 +163,18 @@ class AvIon():
             and applies to any complex
         '''
         self.Etot = self.Ea * np.sum(-self.Qn**2/2/self.n**2 * self.Pn)
+        # Agrees with Zimmerman JQSRT (1980) and Epstein PRA (1991) JQSRT
         return
     
     def get_statweight(self):
-        '''Calculates statistical weight of the given complex with populations self.Pn
+        '''Calculates shell-resolve dstatistical weight of the given complex with populations self.Pn
             Stat. weight of given complex is the product of stat. weight
-            of each shell, np.prod(self.statweight)
+            of each shell, np.prod(self.statweight).
+            For stat.weights of transitions, some configurations will not be allowed,
+            and will need to be subtracted from the total statweight.
+            Ex: For 1s-2p absorption, the lower state cannot have a full 2p orbital,
+            as is the case for one configuration implied by 2^6. That configuration's
+            statweight (g=1) must be subtracted from shell's stat weight before multiplication.
         Returns
         -------
         None.
