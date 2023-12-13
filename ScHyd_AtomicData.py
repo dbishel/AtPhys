@@ -188,7 +188,7 @@ class AtDat():
         self.Earrs = {}
         self.excarrs = {}
         self.gtot_lists = {}
-        self.hnuarrs = {}
+        self.hnuarrs = []
         self.Pnarrs = {}
         
 
@@ -231,7 +231,7 @@ class AtDat():
             self.max_length[uplo] = max_length
             self.Earrs[uplo]      = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in Earrs]) 
             self.excarrs[uplo]    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in excarrs])
-            self.hnuarrs[uplo]    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in hnuarrs])
+            self.hnuarrs    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in hnuarrs]) # Doesn't need to be a dictionary
     
             # Shell-resoled quantities. Pad 1st dimension only. Shape (Z, max_length, nmax)
             self.Pnarrs[uplo]     = np.array([np.pad(item, [(0, max_length-len(item)), (0,0)], constant_values=int(0)) for item in Pnarrs]) 
@@ -618,7 +618,7 @@ class AtDat():
                 cond = self.excarrs[uplo]==exc
                 
                 # Sum over allowed conditions, once for each ionization state
-                tmp = np.array([np.sum((self.hnuarrs[uplo]*pops*gf)[Ellipsis,i,c], axis=-1) \
+                tmp = np.array([np.sum((self.hnuarrs*pops*gf)[Ellipsis,i,c], axis=-1) \
                                 / np.sum( (pops*gf)[Ellipsis,i,c], axis=-1)
                                 for i,c in enumerate(cond)]) # Shape [ionization, NT, Nrho]
                 tmp = np.moveaxis(tmp, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
@@ -630,13 +630,14 @@ class AtDat():
             # Return line-complex resolved line centers
             pgf = []
             for zidx in range(pops.shape[2]):
-                tmp_pgf = np.zeros([*pops.shape[:2],0])
-                tmp_hnu = []
+                tmp_pgf = np.zeros([*pops.shape[:2],0]) # Populations x weighted osc.str.
+                tmp_hnu = [] # Transition energies within satellite 
                 for exc in self.exc_list:
                     if (zidx-exc)>=0:
+                        # Charge state index = zidx-exc to group within line-complex
                         cond = self.excarrs[uplo][zidx-exc]==exc                    
-                        tmp_hnu.extend(self.hnuarrs[uplo][zidx-exc,cond]) # Lower ionization, higher excitation
-                        tmp_pgf = np.dstack([tmp_pgf, (pops*gf)[:,:,zidx,cond]])
+                        tmp_hnu.extend(self.hnuarrs[zidx-exc,cond]) # Lower ionization, higher excitation
+                        tmp_pgf = np.dstack([tmp_pgf, (pops*gf)[:,:,zidx-exc,cond]])
 
                 # Sum over allowed conditions, once for each ionization state
                 hnu_avg.append(np.sum(tmp_hnu*tmp_pgf, axis=-1) \
@@ -1086,7 +1087,7 @@ class AtDat():
         ax.hist(self.hnuarrs.flatten(), weights=self.pstate_rho[Tidx, rhoidx].flatten(),
                  bins=bins, color='w', edgecolor='k')
     
-    def plot_pop_hist_trace(self, rhoidx, bins):
+    def plot_pop_hist_trace(self, rhoidx, bins, uplo='lo'):
         ''' Plots population histogram over hnu as a function of T for a single rho
         
 
@@ -1107,7 +1108,7 @@ class AtDat():
         # bins = np.linspace(6515, 6535, num=6) # N-like complex
 
         pop_hist = []
-        for ii in range(len(KT)):
+        for ii in range(len(self.KT)):
             pop_hist.append(np.histogram(a=self.hnuarrs.flatten(),
                                     weights=self.pstate_rho[ii,rhoidx].flatten(),
                                     bins=bins)[0])
@@ -1273,7 +1274,7 @@ class AtDat():
                  lo_config = ''.join(['{0:d}*{1:0.0f} '.format(shell+1, pop) for shell, pop in enumerate(lo) if pop])
                  up_config = ''.join(['{0:d}*{1:0.0f} '.format(shell+1, pop) for shell, pop in enumerate(up) if pop])
                  
-                 print('{0:5s} | {1:10.1f} | {2:10.2e} | {3:25s} | {4:25s} '.format(Zstr, self.hnuarrs['lo'][i,j], gf[i,j], lo_config, up_config))
+                 print('{0:5s} | {1:10.1f} | {2:10.2e} | {3:25s} | {4:25s} '.format(Zstr, self.hnuarrs[i,j], gf[i,j], lo_config, up_config))
                 
             
 
@@ -1332,8 +1333,8 @@ if __name__=='__main__':
     
     ad.get_line_opacity(1, 0, 2, 1)
     
-    hnu_minmax = [ad.hnuarrs['lo'].flatten()[ad.hnuarrs['lo'].flatten()>0].min(),
-                  ad.hnuarrs['lo'].max()]
+    hnu_minmax = [ad.hnuarrs.flatten()[ad.hnuarrs.flatten()>0].min(),
+                  ad.hnuarrs.max()]
     hnu_axis = np.linspace(5400, 5800, num=2000)
     # hnu_axis = np.linspace(6400, 6800, num=2000)
     # hnu_axis = np.linspace(6665, 6680, num=1000)

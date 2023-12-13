@@ -162,7 +162,8 @@ class AvIon():
             Uses Atzeni's Equation for Ei0 in ionization potentials,
             and applies to any complex
         '''
-        self.Etot = self.Ea * np.sum(-self.Qn**2/2/self.n**2 * self.Pn) # Agrees with Zimmerman JQSRT (1980) E_ion
+        self.Etot = self.Ea * np.sum(-self.Qn**2/2/self.n**2 * self.Pn)
+        # Agrees with Zimmerman JQSRT (1980) and Epstein PRA (1991) JQSRT
         return
     
     def get_statweight(self):

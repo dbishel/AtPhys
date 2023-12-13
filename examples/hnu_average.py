@@ -37,32 +37,32 @@ pf = 1
 
 # Run model
 ad = AtDat(ZZ, A, Zbar_min, nmax, exc_list)
-breakpoint()
 ad.get_atomicdata(vb=0,  DIR=DIR)
 ad.get_hnu(np.array(ad.Zkeys).astype(int))
 ad.tidy_arrays()
 
 # Define T, Ne, rho grids for SB
 Nn, NT = 10, 51 # Number of density, temperature gridpoints
-KT = np.logspace(1,4, num=NT) # eV, Temperature range, to find IPD
+KT = np.logspace(1,np.log10(2e3), num=NT) # eV, Temperature range, to find IPD
 
 rho0 = np.logspace(-1,2, num=Nn) # g/cc
 Zbar0 = 20 # Estimated Zbar
 NE = rho0 / (A*ad.mp) * Zbar0 # 1/cm^3, Ne range
 
 Nrho = 12
-rho_grid = np.logspace(-1,1, num=Nrho)
+rho_grid = np.logspace(-1,3, num=Nrho)
 
 # Estimate IPD for Saha and interpolate onto NE vector
-Zgrid_rho, __, __, __, __, __, CLgrid_rho = dense_plasma(Z=ZZ, Zbar=1, A=A, Ts=KT, rhos=rho_grid)
+Zgrid_rho, __, __, __, __, __, CLgrid_rho = dense_plasma(Z=ZZ, Zbar=1, A=A, Ts=KT, rhos=rho_grid,
+                                                         CL='IS Atzeni')
 
 Zgrid = []
 CLgrid = [] #np.zeros(shape=[NT, Nrho])
 for i,t in enumerate(KT):
     CLgrid.append(np.interp(NE, rho_grid / (A*ad.mp) * Zgrid_rho[i,:], CLgrid_rho[i,:]))
     Zgrid.append(np.interp(NE, rho_grid / (A*ad.mp) * Zgrid_rho[i,:], Zgrid_rho[i,:]))
-CLgrid = np.array(CLgrid)
-Zgrid = np.array(Zgrid)
+CLgrid = np.array(CLgrid) #NE-indexed
+Zgrid = np.array(Zgrid) # NE-indexed
 
 # Check IPD interpolation
 fig, axs = plt.subplots(2, figsize=[4,6])
@@ -89,10 +89,11 @@ ax.set(xscale='log', yscale='log',
               title='ScHyd Zbar')
 plt.colorbar(im, ax=ax)
 
+
 # %% Populations and gf
 # Run Saha-Boltzmann
-ad.saha_boltzmann(KT, NE, IPD=CLgrid)
-ad.saha_boltzmann_rho(rho_grid)
+ad.saha_boltzmann(KT, NE, IPD=0) # NE-indexed
+ad.saha_boltzmann_rho(rho_grid) # rho_grid-indexed
 
 # View Zbar
 fig, ax = plt.subplots(figsize=[4,3])
@@ -103,17 +104,32 @@ ax.set(xscale='log', yscale='log',
               title='Saha-Boltzmann Zbar')
 plt.colorbar(im, ax=ax)
 
+# Compare dense plasma Zbar to Saha-Boltzmann Zbar
+Zdiff = ad.Zbar-Zgrid
+plt.figure()
+plt.pcolormesh(NE,KT, Zdiff, shading='nearest',
+               vmin=-abs(Zdiff).max(), vmax=abs(Zdiff).max(),
+               cmap='bwr')
+plt.gca().set(xscale='log',yscale='log')
+plt.colorbar()
+
 # Get oscillator strengths
 gf = ad.get_gf(1,0,2,1, return_gs=False)
 
-#### Satellite resolved line centers
-sat_avg = ad.get_hnu_average(ad.pstate, gf=gf, resolve='ionization') # Shape: [excitation, NT, Nrho, ionization]
+#### Average hnu
+# Keep indexed to rho_grid throughout
+# Satellite-resolved
+sat_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization') # Shape: [excitation, NT, Nrho, ionization]
+# Line-complex resolved line centers
+hnu_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line') # Shape: [excitation, NT, Nrho, ionization]
 
-# T-dependence of satellite complex
-ridx = 0
-zidx = 3 # N-like
+# %% Excitation-resolved lines
+rhoidx = 0
+zidx = 3 # 3 = N-like
+
+# Single charge-state
 plt.figure(figsize=[4,3])
-[plt.semilogx(KT, sat_avg[eidx,:,ridx,zidx-eidx],
+[plt.semilogx(KT, sat_avg[eidx,:,rhoidx,zidx-eidx],
           color='C{0:d}'.format(eidx),
           label='Z*={0:s}, exc={1:d} new'.format(ad.Zkeys[zidx-eidx], eidx))
      for eidx in exc_list if (zidx-eidx)>=0]
@@ -121,69 +137,79 @@ plt.gca().set(xlabel='kT (eV)',
               ylabel='hnu (eV)')
 plt.legend()
 
-
-# Line-complex resolved line centers
-hnu_avg = ad.get_hnu_average(ad.pstate, gf=gf, resolve='line') # Shape: [excitation, NT, Nrho, ionization]
-
+# All charge states
 plt.figure(figsize=[4,3])
-plt.semilogx(KT, hnu_avg[:,ridx,:], label=ad.Zkeys)
-plt.gca().set(ylim=[5350,5800],
-              xlabel='kT (eV)',
-              ylabel='hnu (eV)')
-plt.legend()
+[plt.semilogx(KT, sat_avg[eidx,:,rhoidx,:],
+          color='C{0:d}'.format(eidx),
+          # label='Z*={0:s}, exc={1:d} new'.format(ad.Zkeys[zidx-eidx], eidx)
+          )
+     for eidx in exc_list if (zidx-eidx)>=0]
+plt.gca().set(xlabel='kT (eV)',
+              ylabel='hnu (eV)',
+              title=r'Excitation-resolved $\langle h\nu \rangle$',
+              ylim=[None,5800])
+# plt.legend()
 
-# %% Focused view of a singlecharge state
-ridx = 4
-zidx = 3 # 0 = Ne-like, 1 = F-like
+# %% T-dependence of <hnu>
+rhoidx = -1
+
+#### Single satellite complex
 fig, axs = plt.subplots(2, figsize=[5,4], sharex=True)
 
-axs[0].semilogx(KT, ad.Zbar[:,ridx], color='k')
+axs[0].semilogx(KT, ad.Zbar_rho[:,rhoidx], color='k')
 axs[0].set(ylabel='Zbar',
-           title='Ne={0:0.1e} cm^-3'.format(NE[ridx]))
+           title=r'$\rho$={0:0.1e} g/cm$^3$'.format(rho_grid[rhoidx]))
 
 # Satellite resolved line centers
-hnu_avg = ad.get_hnu_average(ad.pstate, gf=gf, resolve='ionization') # Shape: [excitation, NT, Nrho, ionization]
+hnu_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization') # Shape: [excitation, NT, Nrho, ionization]
 
-[axs[1].plot(KT, hnu_avg[eidx,:,ridx,zidx-eidx],
+[axs[1].plot(KT, hnu_avg[eidx,:,rhoidx,zidx-eidx],
           color='C{0:d}'.format(eidx),
           label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zidx-eidx], eidx))
      for eidx in exc_list if (zidx-eidx)>=0]
 
 # Line-complex resolved line centers
-hnu_avg = ad.get_hnu_average(ad.pstate, gf=gf, resolve='line') # Shape: [NT, Nrho, ionization]
+hnu_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line') # Shape: [NT, Nrho, ionization]
 
-axs[1].plot(KT, hnu_avg[:,ridx,zidx], label='Averaged', color='k')
+axs[1].plot(KT, hnu_avg[:,rhoidx,zidx], label='Averaged', color='k')
 
 axs[1].set(xlabel='kT (eV)',
           ylabel='hnu (eV)')
 
 plt.legend(bbox_to_anchor=(1.,1))
 
-# %% 
-ridx = -4
-zidx = 3 # 3 = N-like
-fig, axs = plt.subplots(2, figsize=[5,4], sharex=True)
+#### All satellite complexes, average only
+# plt.figure(figsize=[4,3])
+# plt.semilogx(KT, hnu_avg[:,rhoidx,:], label=ad.Zkeys)
+# plt.gca().set(ylim=[5350,5800],
+#               xlabel='kT (eV)',
+#               ylabel='hnu (eV)')
+# plt.legend()
 
-axs[0].plot(KT, ad.Zbar[:,ridx], color='k')
+
+# %% Satellite resolved line centers
+hnu_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization') # Shape: [excitation, NT, Nrho, ionization]
+
+fig, axs = plt.subplots(2, figsize=[4,4], sharex=True)
+axs[0].plot(KT, ad.Zbar_rho[:,rhoidx], color='k')
 axs[0].set(ylabel='Zbar',
-           title='Ne={0:0.1e} cm^-3'.format(NE[ridx]))
+           title=r'Z*={1:s} satellites, $\rho=${0:0.2f} g/cm$^3$'.format(rho_grid[rhoidx],
+                                                                        ad.Zkeys[zidx]))
 
-# Satellite resolved line centers
-hnu_avg = ad.get_hnu_average(ad.pstate, gf=gf, resolve='ionization') # Shape: [excitation, NT, Nrho, ionization]
 
-[axs[1].plot(KT, hnu_avg[eidx,:,ridx,zidx-eidx],
+[axs[1].plot(KT, hnu_avg[eidx,:,rhoidx,zidx-eidx],
           color='C{0:d}'.format(eidx),
           label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zidx-eidx], eidx))
      for eidx in exc_list if (zidx-eidx)>=0]
 
 # Line-complex resolved line centers
-hnu_avg, pgf = ad.get_hnu_average(ad.pstate, gf=gf, resolve='line',
+hnu_avg, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
                                   return_weight=True) # Shape: [NT, Nrho, ionization]
 
-axs[1].scatter(KT, hnu_avg[:,ridx,zidx], label='Averaged', color='k',
+axs[1].scatter(KT, hnu_avg[:,rhoidx,zidx], label='Averaged', color='k',
             facecolor='None')
-axs[1].scatter(KT, hnu_avg[:,ridx,zidx], color='k',
-            alpha=pgf[:,ridx,zidx]/np.nanmax(pgf[:,ridx,zidx]))
+axs[1].scatter(KT, hnu_avg[:,rhoidx,zidx], color='k',
+            alpha=pgf[:,rhoidx,zidx]/np.nanmax(pgf[:,rhoidx,zidx]))
 
 axs[1].set(xlabel='kT (eV)',
           ylabel='hnu (eV)',
@@ -191,5 +217,14 @@ axs[1].set(xlabel='kT (eV)',
             xlim=[0,1100],
           )
 
-# axs[1].legend(bbox_to_anchor=(1.,1))
+
+axs[1].legend(bbox_to_anchor=(1.,0.6))
+
+# %% Check populations
+print('Sum over Saha != 1:')
+print('    ',np.where(abs(ad.psaha.sum(-1)-1)>1e-6))
+print('Sum over Boltz != 1:')
+print('    ', np.where(abs(ad.pboltz.sum(-1)-1)>1e-6))
+print('Sum over state populations + population of bare ion != 1:')
+print('    ', np.where(abs(ad.pstate.sum(-1).sum(-1)+ad.psaha[:,:,-1]-1)>1e-2))
 
