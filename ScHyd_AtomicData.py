@@ -268,8 +268,13 @@ class AtDat():
         self.NT = len(KT)
         self.Nn = len(NE)
         
-        Ip = get_ionization(self.Z, return_energy_levels=False) - IPD
-        self.Iplist = [Ip[int(item)] for item in self.Zkeys]
+        Ip = get_ionization(self.Z, return_energy_levels=False)
+        Ip = np.array([Ip[int(item)] for item in self.Zkeys])
+        self.Ip = Ip
+        
+        # Convert scalar IPD to array with identical values
+        if np.isscalar(IPD):
+            IPD = IPD*np.ones(shape=[self.NT,self.Nn])
 
         g = np.prod(self.gtot_lists['lo'], axis=-1)
 
@@ -282,7 +287,8 @@ class AtDat():
             
             #### Saha
             # Run Saha, with ne (in cm^-3) converted to m^-3. 
-            out = saha(ne*1e6, kT, self.Earrs['lo'], g, self.Iplist, returns='csd') # Returns: p     
+            out = saha(ne*1e6, kT, self.Earrs['lo'], g, Ip, IPD=IPD[i,j],
+                       returns='csd') # Returns: p     
             psaha[i,j] = out # Normalization: np.sum(psaha, axis=-1) should = 1 everywhere
             
             # Calculate Zbar
@@ -299,7 +305,7 @@ class AtDat():
         # Save out values
         self.psaha = psaha
         self.pboltz = pboltz
-        self.pstate = pboltz * psaha[Ellipsis,:-1, np.newaxis]  # Shape: T, rho, Z, state
+        self.pstate = pboltz * psaha[Ellipsis,:-1, np.newaxis]  # Shape: T, rho, Z, state. :-1 trims fully ionized state
 
         self.Zbar = Zbar
         
@@ -470,7 +476,7 @@ class AtDat():
     def get_gf(self, ni=None, li=None,
                      nj=None, lj=None,
                      return_gs=False,
-                     old=False):
+                     ):
         ''' Calculates weighted oscillator strength, averaged over lower states i
             and summed over final states j.
             
