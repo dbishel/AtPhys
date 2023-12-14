@@ -262,6 +262,7 @@ class AtDat():
 
         '''
         
+        self.IPD = IPD
         self.KT = KT
         self.NE = NE
         

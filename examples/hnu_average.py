@@ -12,6 +12,7 @@ transition energy.
 # Python modules
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import scipy as sp
 
 import os                       # Used to e.g. change directory
@@ -93,8 +94,7 @@ if 0:
 
 # %% Populations and gf
 # Run Saha-Boltzmann
-breakpoint()
-ad.saha_boltzmann(KT, NE, IPD=0) # NE-indexed
+ad.saha_boltzmann(KT, NE, IPD=CLgrid) # NE-indexed
 ad.saha_boltzmann_rho(rho_grid) # rho_grid-indexed
 
 # View Zbar from Saha-Boltzmann
@@ -161,8 +161,32 @@ ad.print_table()
 
 # bins = np.arange(5400, 5800, 5)
 
+# %% Check populations
+print('Sum over Saha != 1:')
+print('    ',np.where(abs(ad.psaha.sum(-1)-1)>1e-6))
+print('Sum over Boltz != 1:')
+print('    ', np.where(abs(ad.pboltz.sum(-1)-1)>1e-6))
+print('Sum over state populations + population of bare ion != 1:')
+print('    ', np.where(abs(ad.pstate.sum(-1).sum(-1)+ad.psaha[:,:,-1]-1)>1e-2))
+
+# View populations within 1 ionization state
+Tidx = -1
+rhoidx = 5
+zidx = 3
+print()
+print('pgf-weights within one ionization state:')
+print('{0:0.2f} eV, {1:0.2f} g/cc'.format(KT[Tidx], rho_grid[rhoidx]))
+print('{0:5s} | {1:3s} | {2:10s} | {3:10s}'.format('Zbar','exc', 'pop x gf', 'pop x gf (norm)'))
+[print('{0:5s} | {1:3d} | {2:10.1e} | {3:10.1e}'.format(
+    ad.Zkeys[zidx], e,
+    pgf_sat[e,Tidx,rhoidx,zidx],
+    pgf_sat[e,Tidx,rhoidx,zidx]/pgf_sat[0,Tidx,rhoidx,zidx])) for e in exc_list]
+
+print('Saha balance')
+[print('{0:s} : {1:8.1e}'.format(ad.Zkeys[zidx], ad.psaha[Tidx,rhoidx,zidx])) for zidx in range(ad.psaha.shape[-1]-1)];
+
 # %% Plot: Excitation-resolved lines
-rhoidx = 0
+rhoidx = 7
 zidx = 3 # 3 = N-like
 
 # Single charge-state
@@ -189,7 +213,6 @@ plt.gca().set(xlabel='kT (eV)',
 # plt.legend()
 
 # %% Plot: T-dependence of <hnu>
-rhoidx = -1
 
 #### Single satellite complex
 fig, axs = plt.subplots(2, figsize=[5,4], sharex=True)
@@ -249,26 +272,43 @@ axs[1].set(xlabel='kT (eV)',
 
 axs[1].legend(bbox_to_anchor=(1.,0.6))
 
-# %% Check populations
-print('Sum over Saha != 1:')
-print('    ',np.where(abs(ad.psaha.sum(-1)-1)>1e-6))
-print('Sum over Boltz != 1:')
-print('    ', np.where(abs(ad.pboltz.sum(-1)-1)>1e-6))
-print('Sum over state populations + population of bare ion != 1:')
-print('    ', np.where(abs(ad.pstate.sum(-1).sum(-1)+ad.psaha[:,:,-1]-1)>1e-2))
+# %% Plot: opacity
+#### Plot opacity image versus T at one rho
+plt.figure(figsize=[4,3])
+plt.pcolormesh(ad.KT, hnu_axis, ad.kappa[:,rhoidx,:].T, shading='nearest',
+               # cmap='viridis')
+                cmap='gist_earth_r')
+plt.gca().set(aspect='auto',
+              xlabel='T (eV)',
+              ylabel='hnu (eV)',
+              title=r'$\kappa$ (cm$^2$/g) at {0:0.1f} g/cm$^3$'.format(rho_grid[rhoidx])
+              )
+plt.colorbar()
 
-# View populations within 1 ionization state
-Tidx = -1
-rhoidx = 5
-zidx = 3
-print()
-print('pgf-weights within one ionization state:')
-print('{0:0.2f} eV, {1:0.2f} g/cc'.format(KT[Tidx], rho_grid[rhoidx]))
-print('{0:5s} | {1:3s} | {2:10s} | {3:10s}'.format('Zbar','exc', 'pop x gf', 'pop x gf (norm)'))
-[print('{0:5s} | {1:3d} | {2:10.1e} | {3:10.1e}'.format(
-    ad.Zkeys[zidx], e,
-    pgf_sat[e,Tidx,rhoidx,zidx],
-    pgf_sat[e,Tidx,rhoidx,zidx]/pgf_sat[0,Tidx,rhoidx,zidx])) for e in exc_list]
+#### Plot opacity traces at one rho
+Tbounds = np.array([100, 1000])
+Tidxs = np.where((KT>Tbounds[0]) * (KT<Tbounds[1]))[0]
 
-print('Saha balance')
-[print('{0:s} : {1:8.1e}'.format(ad.Zkeys[zidx], ad.psaha[Tidx,rhoidx,zidx])) for zidx in range(ad.psaha.shape[-1]-1)];
+plt.figure(figsize=[4,3])
+norm = mpl.colors.Normalize(vmin=Tbounds.min(), vmax=Tbounds.max())
+cmap = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.jet)
+[plt.plot(hnu_axis,ad.kappa[Tidx,rhoidx,:], c=cmap.to_rgba(KT[Tidx])) 
+ for Tidx in Tidxs[::3]]
+plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap='jet'))
+plt.gca().set(title=r'$\kappa$ (cm$^2$/g) at {0:0.1f} g/cm$^3$'.format(rho_grid[rhoidx]),
+              xlabel='hnu (eV)',
+              ylabel=r'$\kappa_\nu$ (cm$^2$/g)',
+              # xlim=[5525,5545],
+              )
+
+
+plt.figure(figsize=[4,3])
+Tidx = np.where(KT > 500)[0][0]
+plt.plot(hnu_axis,ad.kappa[Tidx,rhoidx,:],label='kT = {0:0.0f} eV'.format(KT[Tidx]))
+plt.gca().set(title=r'$\kappa$ (cm$^2$/g) at {0:0.1f} g/cm$^3$'.format(rho_grid[rhoidx]),
+              xlabel='hnu (eV)',
+              ylabel=r'$\kappa_\nu$ (cm$^2$/g)',
+              # xlim=[5525,5545],
+              )
+plt.legend()
+
