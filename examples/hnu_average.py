@@ -272,6 +272,29 @@ axs[1].set(xlabel='kT (eV)',
 
 axs[1].legend(bbox_to_anchor=(1.,0.6))
 
+# All complexes
+fig, axs = plt.subplots(len(ad.Zkeys)-1, figsize=[8,24], sharex=True)
+zmin = 1
+for zzz in range(zmin,len(ad.Zkeys)):
+    [axs[zzz-zmin].plot(KT, sat_avg[eidx,:,rhoidx,zzz-eidx],
+              color='C{0:d}'.format(eidx),
+              label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zzz-eidx], eidx))
+         for eidx in exc_list if (zzz-eidx)>=0]
+    
+    # Line-complex resolved line centers
+    axs[zzz-zmin].scatter(KT, hnu_avg[:,rhoidx,zzz], label='Averaged', color='k',
+                facecolor='None')
+    axs[zzz-zmin].scatter(KT, hnu_avg[:,rhoidx,zzz], color='k',
+                alpha=pgf[:,rhoidx,zzz]/np.nanmax(pgf[:,rhoidx,zzz]))
+    
+axs[zzz-zmin].set(xlabel='kT (eV)',
+          ylabel='hnu (eV)',
+          # xscale='log',
+            xlim=[0,1100],
+          )
+
+
+
 # %% Plot: opacity
 #### Plot opacity image versus T at one rho
 plt.figure(figsize=[4,3])
