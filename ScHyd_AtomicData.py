@@ -480,6 +480,8 @@ class AtDat():
         ''' Calculates weighted oscillator strength, averaged over lower states i
             and summed over final states j.
             
+            Corrected for states which don't allow transition.
+            
             By default, upper/lower states specified in get_atomicdata are used.
         
 
@@ -611,6 +613,7 @@ class AtDat():
             - If 'line', shape (NT, Nrho, ionization), one for each line complex
 
         '''
+        pgf = []
         hnu_avg = []
         if resolve=='ionization':
             # Return ionization and excitation resolved line centers
@@ -618,17 +621,24 @@ class AtDat():
                 cond = self.excarrs[uplo]==exc
                 
                 # Sum over allowed conditions, once for each ionization state
-                tmp = np.array([np.sum((self.hnuarrs*pops*gf)[Ellipsis,i,c], axis=-1) \
+                tmp_hnu = np.array([np.sum((self.hnuarrs*pops*gf)[Ellipsis,i,c], axis=-1) \
                                 / np.sum( (pops*gf)[Ellipsis,i,c], axis=-1)
                                 for i,c in enumerate(cond)]) # Shape [ionization, NT, Nrho]
-                tmp = np.moveaxis(tmp, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
+
+                tmp_pgf = [np.sum( (pops*gf)[Ellipsis,i,c], axis=-1)
+                           for i,c in enumerate(cond)] # Shape [ionization, NT, Nrho]
                 
-                hnu_avg.append(tmp)
+                tmp_hnu = np.moveaxis(tmp_hnu, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
+                tmp_pgf = np.moveaxis(tmp_pgf, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
+
+                hnu_avg.append(tmp_hnu)
+                pgf.append(tmp_pgf)
+                
             hnu_avg = np.array(hnu_avg)
+            pgf = np.array(pgf)
             
         elif resolve=='line':
             # Return line-complex resolved line centers
-            pgf = []
             for zidx in range(pops.shape[2]):
                 tmp_pgf = np.zeros([*pops.shape[:2],0]) # Populations x weighted osc.str.
                 tmp_hnu = [] # Transition energies within satellite 
@@ -645,8 +655,8 @@ class AtDat():
                 pgf.append(np.sum(tmp_pgf, axis=-1))
             hnu_avg = np.moveaxis(hnu_avg, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
             pgf = np.moveaxis(pgf, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
-            if return_weight:
-                return hnu_avg, pgf
+        if return_weight:
+            return hnu_avg, pgf
             
         return hnu_avg
         
