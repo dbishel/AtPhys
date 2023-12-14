@@ -12,6 +12,7 @@ transition energy.
 # Python modules
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import scipy as sp
 
 import os                       # Used to e.g. change directory
@@ -64,54 +65,65 @@ for i,t in enumerate(KT):
 CLgrid = np.array(CLgrid) #NE-indexed
 Zgrid = np.array(Zgrid) # NE-indexed
 
-# Check IPD interpolation
-fig, axs = plt.subplots(2, figsize=[4,6])
-im = axs[0].pcolormesh(NE,KT, CLgrid, shading='nearest');
-axs[0].set(xscale='log', yscale='log',
-              xlabel='Ne (1/cc)',
-              ylabel='kT (eV)',
-              title='Interpolated, used in S-B')
-plt.colorbar(im, ax=axs[0])
-
-im = axs[1].pcolormesh(rho_grid,KT, CLgrid_rho, shading='nearest');
-axs[1].set(xscale='log', yscale='log',
-              xlabel='rho (g/cc)',
-              ylabel='kT (eV)',
-              title='Calculated, not used')
-plt.colorbar(im, ax=axs[1])
-
-# Check ZBar
-fig, ax = plt.subplots(figsize=[4,3])
-im = ax.pcolormesh(NE, KT, Zgrid, shading='nearest');
-ax.set(xscale='log', yscale='log',
-              xlabel='Ne (1/cc)',
-              ylabel='kT (eV)',
-              title='ScHyd Zbar')
-plt.colorbar(im, ax=ax)
+if 0:
+    # Check IPD interpolation
+    fig, axs = plt.subplots(2, figsize=[4,6])
+    im = axs[0].pcolormesh(NE,KT, CLgrid, shading='nearest');
+    axs[0].set(xscale='log', yscale='log',
+                  xlabel='Ne (1/cc)',
+                  ylabel='kT (eV)',
+                  title='Interpolated, used in S-B')
+    plt.colorbar(im, ax=axs[0])
+    
+    im = axs[1].pcolormesh(rho_grid,KT, CLgrid_rho, shading='nearest');
+    axs[1].set(xscale='log', yscale='log',
+                  xlabel='rho (g/cc)',
+                  ylabel='kT (eV)',
+                  title='Calculated, not used')
+    plt.colorbar(im, ax=axs[1])
+    
+    # Check ZBar
+    fig, ax = plt.subplots(figsize=[4,3])
+    im = ax.pcolormesh(NE, KT, Zgrid, shading='nearest');
+    ax.set(xscale='log', yscale='log',
+                  xlabel='Ne (1/cc)',
+                  ylabel='kT (eV)',
+                  title='ScHyd Zbar')
+    plt.colorbar(im, ax=ax)
 
 
 # %% Populations and gf
 # Run Saha-Boltzmann
-ad.saha_boltzmann(KT, NE, IPD=0) # NE-indexed
+ad.saha_boltzmann(KT, NE, IPD=CLgrid) # NE-indexed
 ad.saha_boltzmann_rho(rho_grid) # rho_grid-indexed
 
-# View Zbar
-fig, ax = plt.subplots(figsize=[4,3])
-im = ax.pcolormesh(NE,KT, ad.Zbar, shading='nearest', vmin=0, vmax=ZZ)
-ax.set(xscale='log', yscale='log',
-              xlabel='NE (1/cc)',
-              ylabel='kT (eV)',
-              title='Saha-Boltzmann Zbar')
-plt.colorbar(im, ax=ax)
-
-# Compare dense plasma Zbar to Saha-Boltzmann Zbar
-Zdiff = ad.Zbar-Zgrid
-plt.figure()
-plt.pcolormesh(NE,KT, Zdiff, shading='nearest',
-               vmin=-abs(Zdiff).max(), vmax=abs(Zdiff).max(),
-               cmap='bwr')
-plt.gca().set(xscale='log',yscale='log')
-plt.colorbar()
+# View Zbar from Saha-Boltzmann
+if 0:
+    fig, axs = plt.subplots(2, figsize=[4,6])
+    
+    im = axs[0].pcolormesh(NE,KT, ad.Zbar, shading='nearest', vmin=0, vmax=ZZ)
+    plt.colorbar(im, ax=axs[0])
+    
+    im = axs[1].pcolormesh(rho_grid,KT, ad.Zbar_rho, shading='nearest', vmin=0, vmax=ZZ)
+    plt.colorbar(im, ax=axs[1])
+    
+    axs[0].set(xscale='log', yscale='log',
+                  xlabel='NE (1/cc)',
+                  ylabel='kT (eV)',
+                  title='Saha-Boltzmann Zbar')
+    axs[1].set(xscale='log', yscale='log',
+                  xlabel='rho (g/cc)',
+                  ylabel='kT (eV)',
+                  title='Saha-Boltzmann Zbar')
+    
+    # Compare dense plasma Zbar to Saha-Boltzmann Zbar
+    Zdiff = ad.Zbar-Zgrid
+    plt.figure()
+    plt.pcolormesh(NE,KT, Zdiff, shading='nearest',
+                   vmin=-abs(Zdiff).max(), vmax=abs(Zdiff).max(),
+                   cmap='bwr')
+    plt.gca().set(xscale='log',yscale='log')
+    plt.colorbar()
 
 # Get oscillator strengths
 gf = ad.get_gf(1,0,2,1, return_gs=False)
@@ -119,12 +131,62 @@ gf = ad.get_gf(1,0,2,1, return_gs=False)
 #### Average hnu
 # Keep indexed to rho_grid throughout
 # Satellite-resolved
-sat_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization') # Shape: [excitation, NT, Nrho, ionization]
+sat_avg, pgf_sat = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization',
+                             return_weight=True) # Shape: [excitation, NT, Nrho, ionization]
 # Line-complex resolved line centers
-hnu_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line') # Shape: [excitation, NT, Nrho, ionization]
+hnu_avg, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
+                                  return_weight=True) # Shape: [excitation, NT, Nrho, ionization]
 
-# %% Excitation-resolved lines
-rhoidx = 0
+# %% Opacity
+# Generate spectra
+ad.append_lineshape(3*np.ones(ad.pstate_rho.shape), 'G') # Gaussian lineshape
+# ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'L')
+ad.sum_linewidths()
+# linecenter = ad.get_linecenter() # To troubleshoot – unused
+
+ad.get_line_opacity(1, 0, 2, 1)
+
+hnu_minmax = [ad.hnuarrs.flatten()[ad.hnuarrs.flatten()>0].min(),
+              ad.hnuarrs.max()]
+hnu_axis = np.linspace(5400, 5800, num=2000)
+# ls = ad.generate_lineshapes(hnu_axis) # Unit-height line shapes. To troubleshoot – unused
+
+ad.generate_spectra(hnu_axis)
+
+ad.print_table()
+
+# Gifs
+# gifT = np.arange(0,len(KT))
+# gifrho = np.ones(len(KT), dtype=int)*-1
+
+# bins = np.arange(5400, 5800, 5)
+
+# %% Check populations
+print('Sum over Saha != 1:')
+print('    ',np.where(abs(ad.psaha.sum(-1)-1)>1e-6))
+print('Sum over Boltz != 1:')
+print('    ', np.where(abs(ad.pboltz.sum(-1)-1)>1e-6))
+print('Sum over state populations + population of bare ion != 1:')
+print('    ', np.where(abs(ad.pstate.sum(-1).sum(-1)+ad.psaha[:,:,-1]-1)>1e-2))
+
+# View populations within 1 ionization state
+Tidx = -1
+rhoidx = 5
+zidx = 3
+print()
+print('pgf-weights within one ionization state:')
+print('{0:0.2f} eV, {1:0.2f} g/cc'.format(KT[Tidx], rho_grid[rhoidx]))
+print('{0:5s} | {1:3s} | {2:10s} | {3:10s}'.format('Zbar','exc', 'pop x gf', 'pop x gf (norm)'))
+[print('{0:5s} | {1:3d} | {2:10.1e} | {3:10.1e}'.format(
+    ad.Zkeys[zidx], e,
+    pgf_sat[e,Tidx,rhoidx,zidx],
+    pgf_sat[e,Tidx,rhoidx,zidx]/pgf_sat[0,Tidx,rhoidx,zidx])) for e in exc_list]
+
+print('Saha balance')
+[print('{0:s} : {1:8.1e}'.format(ad.Zkeys[zidx], ad.psaha[Tidx,rhoidx,zidx])) for zidx in range(ad.psaha.shape[-1]-1)];
+
+# %% Plot: Excitation-resolved lines
+rhoidx = 7
 zidx = 3 # 3 = N-like
 
 # Single charge-state
@@ -150,8 +212,7 @@ plt.gca().set(xlabel='kT (eV)',
               ylim=[None,5800])
 # plt.legend()
 
-# %% T-dependence of <hnu>
-rhoidx = -1
+# %% Plot: T-dependence of <hnu>
 
 #### Single satellite complex
 fig, axs = plt.subplots(2, figsize=[5,4], sharex=True)
@@ -161,16 +222,12 @@ axs[0].set(ylabel='Zbar',
            title=r'$\rho$={0:0.1e} g/cm$^3$'.format(rho_grid[rhoidx]))
 
 # Satellite resolved line centers
-hnu_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization') # Shape: [excitation, NT, Nrho, ionization]
-
-[axs[1].plot(KT, hnu_avg[eidx,:,rhoidx,zidx-eidx],
+[axs[1].plot(KT, sat_avg[eidx,:,rhoidx,zidx-eidx],
           color='C{0:d}'.format(eidx),
           label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zidx-eidx], eidx))
      for eidx in exc_list if (zidx-eidx)>=0]
 
 # Line-complex resolved line centers
-hnu_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line') # Shape: [NT, Nrho, ionization]
-
 axs[1].plot(KT, hnu_avg[:,rhoidx,zidx], label='Averaged', color='k')
 
 axs[1].set(xlabel='kT (eV)',
@@ -187,9 +244,7 @@ plt.legend(bbox_to_anchor=(1.,1))
 # plt.legend()
 
 
-# %% Satellite resolved line centers
-hnu_avg = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization') # Shape: [excitation, NT, Nrho, ionization]
-
+# %% Plot: Satellite resolved line centers
 fig, axs = plt.subplots(2, figsize=[4,4], sharex=True)
 axs[0].plot(KT, ad.Zbar_rho[:,rhoidx], color='k')
 axs[0].set(ylabel='Zbar',
@@ -197,15 +252,12 @@ axs[0].set(ylabel='Zbar',
                                                                         ad.Zkeys[zidx]))
 
 
-[axs[1].plot(KT, hnu_avg[eidx,:,rhoidx,zidx-eidx],
+[axs[1].plot(KT, sat_avg[eidx,:,rhoidx,zidx-eidx],
           color='C{0:d}'.format(eidx),
           label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zidx-eidx], eidx))
      for eidx in exc_list if (zidx-eidx)>=0]
 
 # Line-complex resolved line centers
-hnu_avg, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
-                                  return_weight=True) # Shape: [NT, Nrho, ionization]
-
 axs[1].scatter(KT, hnu_avg[:,rhoidx,zidx], label='Averaged', color='k',
             facecolor='None')
 axs[1].scatter(KT, hnu_avg[:,rhoidx,zidx], color='k',
@@ -220,11 +272,66 @@ axs[1].set(xlabel='kT (eV)',
 
 axs[1].legend(bbox_to_anchor=(1.,0.6))
 
-# %% Check populations
-print('Sum over Saha != 1:')
-print('    ',np.where(abs(ad.psaha.sum(-1)-1)>1e-6))
-print('Sum over Boltz != 1:')
-print('    ', np.where(abs(ad.pboltz.sum(-1)-1)>1e-6))
-print('Sum over state populations + population of bare ion != 1:')
-print('    ', np.where(abs(ad.pstate.sum(-1).sum(-1)+ad.psaha[:,:,-1]-1)>1e-2))
+# All complexes
+fig, axs = plt.subplots(len(ad.Zkeys)-1, figsize=[8,24], sharex=True)
+zmin = 1
+for zzz in range(zmin,len(ad.Zkeys)):
+    [axs[zzz-zmin].plot(KT, sat_avg[eidx,:,rhoidx,zzz-eidx],
+              color='C{0:d}'.format(eidx),
+              label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zzz-eidx], eidx))
+         for eidx in exc_list if (zzz-eidx)>=0]
+    
+    # Line-complex resolved line centers
+    axs[zzz-zmin].scatter(KT, hnu_avg[:,rhoidx,zzz], label='Averaged', color='k',
+                facecolor='None')
+    axs[zzz-zmin].scatter(KT, hnu_avg[:,rhoidx,zzz], color='k',
+                alpha=pgf[:,rhoidx,zzz]/np.nanmax(pgf[:,rhoidx,zzz]))
+    
+axs[zzz-zmin].set(xlabel='kT (eV)',
+          ylabel='hnu (eV)',
+          # xscale='log',
+            xlim=[0,1100],
+          )
+
+
+
+# %% Plot: opacity
+#### Plot opacity image versus T at one rho
+plt.figure(figsize=[4,3])
+plt.pcolormesh(ad.KT, hnu_axis, ad.kappa[:,rhoidx,:].T, shading='nearest',
+               # cmap='viridis')
+                cmap='gist_earth_r')
+plt.gca().set(aspect='auto',
+              xlabel='T (eV)',
+              ylabel='hnu (eV)',
+              title=r'$\kappa$ (cm$^2$/g) at {0:0.1f} g/cm$^3$'.format(rho_grid[rhoidx])
+              )
+plt.colorbar()
+
+#### Plot opacity traces at one rho
+Tbounds = np.array([100, 1000])
+Tidxs = np.where((KT>Tbounds[0]) * (KT<Tbounds[1]))[0]
+
+plt.figure(figsize=[4,3])
+norm = mpl.colors.Normalize(vmin=Tbounds.min(), vmax=Tbounds.max())
+cmap = mpl.cm.ScalarMappable(norm=norm, cmap=mpl.cm.jet)
+[plt.plot(hnu_axis,ad.kappa[Tidx,rhoidx,:], c=cmap.to_rgba(KT[Tidx])) 
+ for Tidx in Tidxs[::3]]
+plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap='jet'))
+plt.gca().set(title=r'$\kappa$ (cm$^2$/g) at {0:0.1f} g/cm$^3$'.format(rho_grid[rhoidx]),
+              xlabel='hnu (eV)',
+              ylabel=r'$\kappa_\nu$ (cm$^2$/g)',
+              # xlim=[5525,5545],
+              )
+
+
+plt.figure(figsize=[4,3])
+Tidx = np.where(KT > 500)[0][0]
+plt.plot(hnu_axis,ad.kappa[Tidx,rhoidx,:],label='kT = {0:0.0f} eV'.format(KT[Tidx]))
+plt.gca().set(title=r'$\kappa$ (cm$^2$/g) at {0:0.1f} g/cm$^3$'.format(rho_grid[rhoidx]),
+              xlabel='hnu (eV)',
+              ylabel=r'$\kappa_\nu$ (cm$^2$/g)',
+              # xlim=[5525,5545],
+              )
+plt.legend()
 
