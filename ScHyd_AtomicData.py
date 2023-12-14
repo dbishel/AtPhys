@@ -662,7 +662,10 @@ class AtDat():
         
         
     def get_line_opacity(self,ni,li,nj,lj):
-        ''' Converts atomic data and SB populations into opacity at linecenter of each line.
+        ''' Converts atomic data and SB populations into opacity (cm^2/g) at linecenter of each line.
+        Multiply self.kappa_line against the UNIT-HEIGHT lineshapes to obtain
+        each line's spectrum.
+        I.e., Total spectrum = sum[kappa_line x (UNIT-HEIGHT LINESHAPE)]
         
 
         Returns
@@ -672,7 +675,7 @@ class AtDat():
         '''
         linecenter = self.get_linecenter() # 1/eV. Value of normalized line shape at line center. Used in xsec
         
-        # Get hydrogenic oscillator strength
+        # Get weighted oscillator strength, ignoring states that don't allow transition
         gf = self.get_gf(ni, li, nj, lj)
         
         # Calculate cross-section of each transition. See Perez-Callejo JQSRT 202
@@ -681,62 +684,15 @@ class AtDat():
         # "State" population is fractional population * Ntot, on rho_grid
         # Note: pstate_rho is shape [T, rho, Zbar, complex]
         Ni = self.rho_grid / (self.A * self.mp) # cm^-3, ion density
-        alpha_line = xsec * Ni[np.newaxis,:,np.newaxis,np.newaxis] \
-                    * self.pstate_rho * linecenter # cm^-1. "Opacity" at line center, given state populations
                     
         # Calculate opacity
-        # self.kappa_line = alpha_line / rho_grid[None,:,None,None] # cm^2 / g
         self.kappa_line = xsec * 1/(self.A * self.mp) \
                         * self.pstate_rho * linecenter # cm^2 / g
         
-        # # Calculate cross-section of each transition. pstate_rho is shape [T, rho, Zbar, complex]
-        # xsec = amp*(2*np.pi**2 * self.re * self.c * gf) # cm^2. Line cross-section (no lineshape)
-        
-        # # Calculate linear attenuation coefficient. pstate_rho is shape [T, rho, Zbar, complex]
-        # # "State" population is fractional population * Ntot, on rho_grid
-        # alpha = xsec * self.pstate_rho \
-        #              * (self.rho_grid /self.A/self.mp)[np.newaxis,:,np.newaxis,np.newaxis]
-                     
-        # # Calculate opacity, cm^2/g
-        # kappa = alpha / self.rho_grid[np.newaxis,:,np.newaxis,np.newaxis] # cm^2 / g
-        # self.kappa = kappa
-
-        # # Given shell populations, calculate fraction of all possible configurations
-        # # which would admit desired transition
-
-        # # Construct array of all population ranges to sum
-        # # Permissible populations of initial lower active state.
-        # # Range is from 1 (for at least one available) OR all other sub-shells full,
-        # # to shell pop OR full sub-shell
-        # r0 = np.maximum(1, self.Pnarrs[:,:,ni-1] - (2*ni**2-(4*li+2))).astype(int) # Range minimum
-        # r1 = np.minimum(self.Pnarrs[:,:,ni-1], 4*li+2).astype(int) + 1 # range maximum. +1 for inclusive
-        # gi = [] 
-        # for rr in zip(r0.flatten(),r1.flatten()):
-        #     tmp = []
-        #     for w in range(*rr):
-        #         tmp.append(comb(4*li+2, w))
-        #     gi.append(np.sum(tmp))
-        # gi = np.array(gi).reshape(self.Pnarrs.shape[:-1])
-
-        # # Permissible populations of initial upper active state.
-        # # Range is from 0 (for at least one hole) OR all other sub-shells full,
-        # # to shell pop OR full sub-shell-1
-        # r0 = np.maximum(0, self.Pnarrs[:,:,nj-1] - (2*nj**2-(4*lj+2))).astype(int) # Range minimum
-        # r1 = np.minimum(self.Pnarrs[:,:,nj-1], 4*lj+2-1).astype(int) + 1 # range maximum. +1 for inclusive
-        # gj = []
-        # for rr in zip(r0.flatten(),r1.flatten()):
-        #     tmp = []
-        #     for w in range(*rr):
-        #         tmp.append(comb(4*lj+2, w))
-        #     gj.append(np.sum(tmp))
-        # gj = np.array(gj).reshape(self.Pnarrs.shape[:-1])
-        
-        # # # Multiplicity of allowed transitions is product of initial and final
-        # g_allowed = gi*gj
-        # g_tot = comb(2*ni**2, self.Pnarrs[:,:,ni-1]) \
-        #       * comb(2*nj**2, self.Pnarrs[:,:,nj-1]) # Total possible transitions
-        
-        # # frac = g_allowed / g_tot # Fraction of allowed transitions
+        # Opacity [cm^-1] at line center. Correct, but unused.
+        # alpha_line = xsec * Ni[np.newaxis,:,np.newaxis,np.newaxis] \
+        #             * self.pstate_rho * linecenter # cm^-1. "Opacity" at line center, given state populations
+        # self.kappa_line = alpha_line / rho_grid[None,:,None,None] # cm^2 / g
         
         return
     
@@ -803,19 +759,19 @@ class AtDat():
     
     
     def generate_spectra(self, hnu_axis, method='pseudo'):
-        ''' Calculates opacity spectrum.
+        ''' Calculates opacity spectrum (cm^2/g).
         For each T,rho, sums over spectral opacity (line opacity * lineshape)
         of each charge state and complex.
         '''
         
         # Get UNIT-HEIGHT lineshapes
-        lines = self.generate_lineshapes(hnu_axis, method=method, norm=False)
+        lines = self.generate_lineshapes(hnu_axis, method=method, norm=False) # Shape: [NT, Nrho, ionization, state, hnu]
         
-        # Multiply against opacity at line center
+        # Multiply against opacity (UNITS) at line center
         opac = lines * np.expand_dims(self.kappa_line, axis=-1)
         
         # Sum over Zbar and complexes, axis=(2,3)
-        self.kappa = np.sum(opac, axis=(2,3))
+        self.kappa = np.sum(opac, axis=(2,3)) # cm^2/g
         
         return
     

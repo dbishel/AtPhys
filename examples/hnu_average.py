@@ -142,14 +142,14 @@ hnu_avg, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
 ad.append_lineshape(3*np.ones(ad.pstate_rho.shape), 'G') # Gaussian lineshape
 # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'L')
 ad.sum_linewidths()
-linecenter = ad.get_linecenter()
+# linecenter = ad.get_linecenter() # To troubleshoot – unused
 
 ad.get_line_opacity(1, 0, 2, 1)
 
 hnu_minmax = [ad.hnuarrs.flatten()[ad.hnuarrs.flatten()>0].min(),
               ad.hnuarrs.max()]
 hnu_axis = np.linspace(5400, 5800, num=2000)
-ls = ad.generate_lineshapes(hnu_axis)
+# ls = ad.generate_lineshapes(hnu_axis) # Unit-height line shapes. To troubleshoot – unused
 
 ad.generate_spectra(hnu_axis)
 
