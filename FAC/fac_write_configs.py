@@ -6,7 +6,8 @@ Created on Wed Feb 15 11:50:36 2023
 @author: dbis
 
 Assigns each of N (n) indistinguishable electrons to R (k) distinguishable shells.
-Used to construct unique shell occupations (complexes) to be read in by FAC
+Used to construct unique shell occupations (complexes) to be read in by FAC.
+Fails for Z > 15 due to the sheer number of combinations.
 """
 
 # Python modules
@@ -15,6 +16,163 @@ import numpy as np
 from math import comb, ceil
 
 # %% Functions
+# Generate complexes
+NE = 16
+nmax=5
+
+def generate_complexes(NE, nmax, exc=1):
+    ''' Generates K-alpha relevant complexes for the given charge state
+    and number of excited electrons.
+    
+    Parameters
+    ----------
+    NE : int
+        Number of bound electrons
+    nmax : int
+        Maximum principal quantum number
+    exc : int
+        Number of excited n=2 electrons. Determines which satellite this complex belongs to.
+        
+    Returns
+    -------
+    lostr : list
+        List of FAC-readable lower-complex strings.
+    upstr : list
+        List of FAC-readable upper-complex strings.
+    ''' 
+    
+    shells = np.arange(1,nmax+1).astype(int)
+    if NE==1:
+        # Ground state upper/lower complexes
+        if exc==0:
+            lo = np.zeros(nmax).astype(int)
+            lo[0] = NE
+
+            up = np.zeros(nmax).astype(int)
+            up[:] = lo[:]
+            up[0] -= 1
+            up[1] += 1
+            
+            # Wrap in a list to enable iteration later
+            lo = [lo]
+            up = [up]
+        else:
+            lo, up = [], []
+
+    elif NE==2:
+        # Ground state upper/lower complexes
+        if exc==0:
+            lo = np.zeros(nmax).astype(int)
+            lo[0] = NE
+
+            up = np.zeros(nmax).astype(int)
+            up[:] = lo[:]
+            up[0] -= 1
+            up[1] += 1
+            
+            # Wrap in a list to enable iteration later
+            lo = [lo]
+            up = [up]
+
+        else:
+            lo, up = [], []
+        # for i in range(2,nmax): # Ignore excitation of 1s electrons
+        #     # Remove one electron from n=2 and place in n=i
+        #     diff = np.zeros(nmax).astype(int)
+        #     diff[1] -= 1
+        #     diff[i] += 1
+        #     elo.append(lo+diff)
+        #     eup.append(up+diff)
+       
+    elif NE <= 9:
+        lo, up = [], [] # Initialize
+
+        # Ground state upper/lower complexes. Used as basis for all excited
+        glo = np.zeros(nmax).astype(int)
+        glo[:2] =[2,NE-2]
+
+        gup = np.zeros(nmax).astype(int)
+        gup[:] = glo[:]
+        gup[0] -= 1
+        gup[1] += 1
+        
+        if exc==0:
+            # Just use grounds
+            lo = glo
+            up = gup
+            
+            # Wrap in a list to enable iteration later
+            lo = [lo]
+            up = [up]
+        
+        elif exc==1:
+            for i in range(2,nmax):
+                # Remove one electron from n=2 and place in n=i
+                diff = np.zeros(nmax).astype(int)
+                diff[1] -= 1
+                diff[i] += 1
+                lo.append(glo+diff)
+                up.append(gup+diff)
+        
+        # Add doubly-excited states if >2 valence electrons available
+        elif (exc>=2) and (NE>=4): 
+            for i in range(2,nmax):
+                for j in range(2,nmax):
+                    diff = np.zeros(nmax).astype(int)
+                    diff[1] = -2 # Remove two electrons from valence
+                    diff[i] += 1 # Add one electron to excited shell i
+                    diff[j] += 1 # Add one electron to excited shell j
+                    lo.append(glo+diff)
+                    up.append(gup+diff)
+
+    elif NE <= 28:
+        # Ground state upper/lower complexes
+        lo = np.zeros(nmax).astype(int)
+        lo[:3] =[2,7,NE-9]
+
+        up = np.zeros(nmax).astype(int)
+        up[:] = lo[:]
+        up[0] -= 1
+        up[1] += 1
+
+        elo = []
+        eup = []
+
+        for i in range(1,3): # i iterates from n=2 to n=3, highest occupied shell
+            # Remove one electron from n=i and place in n=j, for j>i> n=2
+            for j in range(i+1,nmax):
+                diff = np.zeros(nmax).astype(int)
+                diff[i] -= 1
+                diff[j] += 1
+                elo.append(lo+diff)
+                eup.append(up+diff)
+
+
+    # Write strings - lower states
+    lostr = []
+    for pops in lo:
+        tmp = []
+        for s,p in zip(shells, pops):
+            if p>0:
+                tmp.append('{0:d}*{1:d}'.format(s, p))
+                if s==2:
+                    tmp[-1] += ';2p<6'
+        lostr.append(' '.join(tmp))
+
+    # Write strings - excited upper state
+    upstr = []
+    for pops in up:
+        tmp = []
+        for s,p in zip(shells, pops):
+            if p>0:
+                tmp.append('{0:d}*{1:d}'.format(s, p))
+                if s==2:
+                    tmp[-1] += ';2p>0'
+        upstr.append(' '.join(tmp))
+
+    return [lostr, upstr]
+
+
 def gen_list(n, k): # Assign each of n indistinguishable balls to one of k distinguishable buckets
     # Returns generator with bucket assignment of each ball, corresponding to unique bucket populations
     lst = [0] * n
