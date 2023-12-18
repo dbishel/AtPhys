@@ -38,6 +38,7 @@ pf = 1
 
 # Run model
 ad = AtDat(ZZ, A, Zbar_min, nmax, exc_list)
+breakpoint()
 ad.get_atomicdata(vb=0,  DIR=DIR)
 ad.get_hnu(np.array(ad.Zkeys).astype(int))
 ad.tidy_arrays()

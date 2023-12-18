@@ -105,6 +105,8 @@ class AtDat():
                     Etotx = [] # Total ion energy
                     fn = DIR+'fac_{0:d}_{1:d}_{2:d}_{3:s}.txt'.format(Nele, self.nmax,
                                                                       exc, uplo)
+
+                    # Get populations from file
                     with open(fn, 'r') as file:
                         l = True
                         while l:
