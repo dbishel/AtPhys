@@ -20,7 +20,7 @@ from math import comb, ceil
 NE = 16
 nmax=5
 
-def generate_complexes(NE, nmax, exc=1):
+def generate_complexes(NE, nmax, exc=1, fac_readable=True):
     ''' Generates K-alpha relevant complexes for the given charge state
     and number of excited electrons.
     
@@ -33,14 +33,22 @@ def generate_complexes(NE, nmax, exc=1):
     exc : int
         Number of excited n=2 electrons. Determines which satellite this complex belongs to.
         
+    fac_readable : bool
+        If True, return FAC-readable strings with 2p vacancy/occupancy rules applied. \n
+        If False, return list of shell populations (used by ScHyd)
+        
     Returns
     -------
     lostr : list
-        List of FAC-readable lower-complex strings.
+        List of FAC-readable lower-complex strings. 
     upstr : list
-        List of FAC-readable upper-complex strings.
+        List of FAC-readable upper-complex strings. Empty if M-shell ground state
+    lo : list
+        List of lower-complex shell populations
+    up : list
+        List of upper-complex shell populations
     ''' 
-    
+
     shells = np.arange(1,nmax+1).astype(int)
     if NE==1:
         # Ground state upper/lower complexes
@@ -115,39 +123,70 @@ def generate_complexes(NE, nmax, exc=1):
                 up.append(gup+diff)
         
         # Add doubly-excited states if >2 valence electrons available
-        elif (exc>=2) and (NE>=4): 
-            for i in range(2,nmax):
-                for j in range(2,nmax):
-                    diff = np.zeros(nmax).astype(int)
-                    diff[1] = -2 # Remove two electrons from valence
-                    diff[i] += 1 # Add one electron to excited shell i
-                    diff[j] += 1 # Add one electron to excited shell j
-                    lo.append(glo+diff)
-                    up.append(gup+diff)
+        elif (exc>=2) and (NE>=4):             
+            # Construct core configurations, ground minus excited electrons from n=2
+            diff = np.zeros(nmax).astype(int)
+            diff[1] = -exc
+            
+            clo = glo+diff
+            cup = gup+diff
+
+            # Generator object. All ways of assigning Nexc electrons to shells n>2
+            combinations = all_counts(exc, nmax-2) 
+            
+            for c in combinations:
+                # Add excited electrons to outer shells
+                ltmp = clo*1
+                utmp = cup*1
+                
+                ltmp[2:] = c
+                utmp[2:] = c
+                
+                lo.append(ltmp)
+                up.append(utmp)
 
     elif NE <= 28:
-        # Ground state upper/lower complexes
-        lo = np.zeros(nmax).astype(int)
-        lo[:3] =[2,7,NE-9]
+        # ALgorithm here is a little different. We use exc to define the
+        # number of n=1 and n=2 electrons. We then construct all combinations
+        # of assigning the remaining electrons to higher shells.
+        
+        # Core upper/lower complexes
+        clo = np.zeros(nmax).astype(int) # clo = core-low
+        clo[:2] =[2,8-exc]
+        
+        if exc==0: # If ground state, and therefore n=2 is full, there is no upper state            
+            # Wrap in a list to enable iteration later           
+            lo = [clo]
+            up = [[]]
+            
+        else: # If excited, and therefore n=2 is not full, construct upper state
+            cup = clo * 1 # Copy lower populations
+            
+            # Promote n=1 electron to n=2
+            cup[0] -= 1 
+            cup[1] += 1
 
-        up = np.zeros(nmax).astype(int)
-        up[:] = lo[:]
-        up[0] -= 1
-        up[1] += 1
+            Nexc = NE - (10-exc) # Number of electrons in n>2 shells
+            
+            # Generator object. All ways of assigning Nexc electrons to shells n>2
+            combinations = all_counts(Nexc, nmax-2) 
+            
+            lo, up = [], [] # Initiate lists
+            for c in combinations: # Append each upper shell population to up and lo
+                # Copy core configuration
+                ltmp = clo * 1
+                utmp = cup * 1
+                
+                # Append upper shell populations
+                ltmp[2:] = c
+                utmp[2:] = c
+                
+                lo.append(ltmp)
+                up.append(utmp)
 
-        elo = []
-        eup = []
-
-        for i in range(1,3): # i iterates from n=2 to n=3, highest occupied shell
-            # Remove one electron from n=i and place in n=j, for j>i> n=2
-            for j in range(i+1,nmax):
-                diff = np.zeros(nmax).astype(int)
-                diff[i] -= 1
-                diff[j] += 1
-                elo.append(lo+diff)
-                eup.append(up+diff)
-
-
+    if not(fac_readable):
+        return [lo, up]
+    
     # Write strings - lower states
     lostr = []
     for pops in lo:
@@ -155,7 +194,7 @@ def generate_complexes(NE, nmax, exc=1):
         for s,p in zip(shells, pops):
             if p>0:
                 tmp.append('{0:d}*{1:d}'.format(s, p))
-                if s==2:
+                if s==2 and p!=8: # Ignore for full n=2 shells, i.e. M-shell ground states
                     tmp[-1] += ';2p<6'
         lostr.append(' '.join(tmp))
 
@@ -543,8 +582,8 @@ if __name__=='__main__':
     exc_list = [0,1,2,3]
     # exc_list = [3]
 
-    Nlist = np.arange(10,19)
-    # Nlist = [12]
+    # Nlist = np.arange(10,19)
+    Nlist = [10]
     # Nlist = [3,4,5,9,10,11,]
     for Nele in Nlist:
         
