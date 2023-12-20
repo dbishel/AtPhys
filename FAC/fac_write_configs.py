@@ -172,7 +172,7 @@ def generate_complexes(NE, nmax, exc=1, fac_readable=True):
         if Nexc>0:
             combinations = all_counts(Nexc, nmax-2)
         else:
-            combinations = [[0,0,0]] # Only occurs for ground-state Ne-like
+            combinations = [[0]*(nmax-2)] # Only occurs for ground-state Ne-like
         
         lo, up = [], [] # Initiate lists
         for c in combinations: # Append each upper shell population to up and lo

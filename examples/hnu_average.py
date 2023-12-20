@@ -30,8 +30,8 @@ DIR = '../complexes/'
 ZZ = 24 # Nuclear charge
 A = 51.996 # Nucleon number
 
-Zbar_min = ZZ - 15
-nmax = 5 # Maximum allowed shell
+Zbar_min = ZZ - 10
+nmax = 3 # Maximum allowed shell
 exc_list = np.arange(6) # Excitation degrees to consider (lower state is ground state, singly excited, ...)
 # exc_list = [0,1,2] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
 pf = 1
@@ -68,9 +68,9 @@ Nrho = 12
 rho_grid = np.logspace(-1,3, num=Nrho)
 
 # Estimate IPD for Saha and interpolate onto NE vector
-if 0: # Skip while testing
+if 1: # Skip while testing
     Zgrid_rho, __, __, __, __, __, CLgrid_rho = dense_plasma(Z=ZZ, Zbar=1, A=A, Ts=KT, rhos=rho_grid,
-                                                              CL='IS Atzeni')
+                                                              CL='IS Hansen')
     
     Zgrid = []
     CLgrid = [] #np.zeros(shape=[NT, Nrho])
@@ -109,7 +109,7 @@ if 0:
 
 # %% Populations and gf
 # Run Saha-Boltzmann
-ad.saha_boltzmann(KT, NE, IPD=0) # NE-indexed
+ad.saha_boltzmann(KT, NE, IPD=CLgrid) # NE-indexed
 ad.saha_boltzmann_rho(rho_grid) # rho_grid-indexed
 
 # View Zbar from Saha-Boltzmann
@@ -216,6 +216,7 @@ for e in exc_list:
     
 
 # %% Plot: Excitation-resolved lines
+rhoidx = 1
 rhoidx = 7
 
 # Define satellite to zoom in on
@@ -284,12 +285,20 @@ axs[0].plot(KT, ad.Zbar_rho[:,rhoidx], color='k')
 axs[0].set(ylabel='Zbar',
            title=r'Z*={1:s} satellites, $\rho=${0:0.2f} g/cm$^3$'.format(rho_grid[rhoidx],
                                                                         ad.Zkeys[zidx]))
-
-
-[axs[1].plot(KT, hnu_exc[eidx,:,rhoidx,zidx-eidx],
+# Plot all, and zoom in appropriately
+[axs[1].plot(KT, hnu_exc[eidx,:,rhoidx,:],
           color='C{0:d}'.format(eidx),
-          label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zidx-eidx], eidx))
-     for eidx in exc_list if (zidx-eidx)>=0]
+          )
+      for eidx in exc_list]
+axs[1].set(ylim= [np.nanmin(hnu_sat[:,rhoidx,sidx]),
+                    # np.nanmax(hnu_sat[:,rhoidx,si])
+                    hnu_exc[0,-1,-1,zidx] + 1
+                    ])
+
+# [axs[1].plot(KT, hnu_exc[eidx,:,rhoidx,zidx-eidx],
+#           color='C{0:d}'.format(eidx),
+#           label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zidx-eidx], eidx))
+#      for eidx in exc_list if (zidx-eidx)>=0]
 
 # Line-complex resolved line centers
 axs[1].scatter(KT, hnu_sat[:,rhoidx,sidx], label='Averaged', color='k',
@@ -336,8 +345,6 @@ axs[-1].set(xlabel='kT (eV)',
           # xscale='log',
             xlim=[0,1100],
           )
-
-
 
 # %% Plot: opacity
 #### Plot opacity image versus T at one rho
