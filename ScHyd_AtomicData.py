@@ -31,6 +31,10 @@ from copy import deepcopy
 from ScHyd import get_ionization, AvIon
 from saha_boltzmann_populations import saha, boltzmann
 
+sys.path.append('../FAC')
+from fac_write_configs import generate_complexes
+
+
 
 class AtDat():
     
@@ -64,7 +68,8 @@ class AtDat():
         self.lineshape_dict = {'G':[],
                                'L':[]}
                         
-    def get_atomicdata(self, DIR='complexes/', nllo=[1,0], nlup=[2,1], vb=False):
+    def get_atomicdata(self, DIR='complexes/', nllo=[1,0], nlup=[2,1], 
+                       pop_method='file', vb=False):
         ''' Calculates atomic data for each excited complex in given directory.
         
         Screened Hydrogenic model is run for each complex.
@@ -79,12 +84,16 @@ class AtDat():
         Parameters
         ----------
         DIR : str
-            Location of FAC-formatted complex files
+            Location of FAC-formatted complex files. Ifnored if pop_method is 'inline'
         nllo : list
             Two-element list of the lower state [n,l]. Provided now because 
             upper and lower states are implicit in the specified file
         nlup : list
-            Two-element list of the upper state [n,l]
+            Two-element list of the upper state [n,l]]
+        pop_method : str
+            Option to read population strings from files in DIR ['file'], or to 
+            generate them inline ['inline']. Inline is recommended for multiply excited
+            M-shell ions.
         '''
         
         self.nllo = nllo
@@ -105,61 +114,86 @@ class AtDat():
                     Etotx = [] # Total ion energy
                     fn = DIR+'fac_{0:d}_{1:d}_{2:d}_{3:s}.txt'.format(Nele, self.nmax,
                                                                       exc, uplo)
-                    with open(fn, 'r') as file:
-                        l = True
-                        while l:
-                            # Read each line. Files have one complex per line
-                            l = file.readline()
-                            
-                            # Parse shell and population. First number is always shell, second population
-                            p = re.compile('([0-9]+)\*([0-9]+)')
-                            m = re.findall(p,l)
-                            
-                            # Skip remainder if end-of-file (m is empty)
-                            if not m:
-                                continue                
-                            
-                            # Initiate populations as all 0's
-                            Pni = np.zeros(self.nmax) # populations of current complex
-                            for shell, pop in np.array(m).astype(int): # Read one shell of the current complex at a time
+
+                    pops = []
+                    if pop_method=='file':
+                        # Get populations from file
+                        with open(fn, 'r') as file:
+                            l = True
+                            while l:
+                                # Read each line. Files have one complex per line
+                                l = file.readline()
                                 
-                                Pni[shell-1] = pop
-                            
-                            # Get energy levels from Average Ion
-                            sh = AvIon(self.Z, Zbar=(self.Z-Nele), nmax=self.nmax)      
-            
-                            sh.Pn = Pni # Pass Pn manually
-                            sh.get_Qn()
-                            
-                            sh.get_Wn()
-                            sh.get_En()
-                            sh.get_statweight() # Shell-resolved statweight, from all configurations, as needed for Saha
-                                                # Subtraction of configurations unavailable for transition (e.g. lower state 
-                                                # with full 2p) is handled in get_gf
-                            sh.get_Etot()
-                            
-                            Enx.append(sh.En)
-                            Pnx.append(Pni)
-                            gnx.append(sh.statweight)
-                            Etotx.append(sh.Etot)
-                            
-                            if vb: # Print if Verbose
-                                print('\n----------')
-                                print('----------\n')
-                                print('Zbar: ', Zbar)
-                                print('Nele: ', Nele)
-                                print('Exc: ', exc)
-                                print('FAC: ', l)
-                                print('Parse: ', m)
-                                print('Pops: ', Pni)
-                                print('Stat.weight: ', sh.statweight)
-            
-                                print(sh.En)
+                                # Parse shell and population. First number is always shell, second population
+                                p = re.compile('([0-9]+)\*([0-9]+)')
+                                m = re.findall(p,l)
+                                
+                                # Skip remainder if end-of-file (m is empty)
+                                if not m:
+                                    continue                
+                                
+                                # Initiate populations as all 0's
+                                Pni = np.zeros(self.nmax) # populations of current complex
+                                for shell, pop in np.array(m).astype(int): # Read one shell of the current complex at a time
+                                    
+                                    Pni[shell-1] = pop
+                                pops.append(Pni)
+                                
+                                
+                    elif pop_method=='inline':
+                        # Write populations inline, from fac_write_configs.generate_complexes
+                        lo, up = generate_complexes(NE=Nele, nmax=self.nmax, exc=exc,
+                                                    fac_readable=False)
+                        
+                        if uplo=='up':
+                            pops = up
+                        else:
+                            pops = lo
+                    
+                    for Pni in pops:
+                        
+                        if len(Pni)==0:
+                            # Append NaN to each, to keep same length as corresponding up/lo
+                            Enx.append(np.nan)
+                            Pnx.append([np.nan]*self.nmax) # List of length nmax, one for each shell
+                            gnx.append([np.nan]*self.nmax) # List of length nmax, one for each shell
+                            Etotx.append(np.nan)
+                            continue # Skip if string is empty. Only occurs for M-shell ground states
+                        # Get energy levels from Average Ion for each configuration
+                        sh = AvIon(self.Z, Zbar=(self.Z-Nele), nmax=self.nmax)      
+        
+                        sh.Pn = Pni # Pass Pn manually for this configuration
+                        sh.get_Qn()
+                        
+                        sh.get_Wn()
+                        sh.get_En()
+                        sh.get_statweight() # Shell-resolved statweight, from all configurations, as needed for Saha
+                                            # Subtraction of configurations unavailable for transition (e.g. lower state 
+                                            # with full 2p) is handled in get_gf
+                        sh.get_Etot()
+                        
+                        Enx.append(sh.En)
+                        Pnx.append(Pni)
+                        gnx.append(sh.statweight)
+                        Etotx.append(sh.Etot)
+                        
+                        if vb: # Print if Verbose
+                            print('\n----------')
+                            print('----------\n')
+                            print('Zbar: ', Zbar)
+                            print('Nele: ', Nele)
+                            print('Exc: ', exc)
+                            print('FAC: ', l)
+                            print('Parse: ', m)
+                            print('Pops: ', Pni)
+                            print('Stat.weight: ', sh.statweight)
+        
+                            print(sh.En)
                     self.En[uplo][Zbar_str]['{0:d}'.format(exc)] = Enx
                     self.Pn[uplo][Zbar_str]['{0:d}'.format(exc)] = Pnx
                     self.gn[uplo][Zbar_str]['{0:d}'.format(exc)] = gnx
                     self.Etot[uplo][Zbar_str]['{0:d}'.format(exc)] = Etotx
-        
+
         # Keep list of calculated charge states
         self.Zkeys = [Zkey for Zkey in list(self.En['up'].keys()) if list(self.En['up'][Zkey].keys())] 
         
@@ -170,9 +204,13 @@ class AtDat():
             valid_exc = list(self.En['up'][Zbar_str].keys())
             for exc in valid_exc:
                 # color = self.norm(int(exc)) # Get rgba from colorbar
-                # Calculate, save hnu for each configuration up/lo pair
+                # Calculate, save hnu for each configuration up/lo .
                 self.hnu[Zbar_str][exc] = [abs(up - lo) for up,lo in zip(self.Etot['up'][Zbar_str][exc],
                                                                          self.Etot['lo'][Zbar_str][exc])] 
+                # If either up or lo has an empty Etot list, then hnu is also an empty list.
+                # zip naturally truncates to the shortest iterable.
+                # This allows M-shell ground states to only have a lower state energy,
+                # yet not produce an hnu value
         return
     
     def tidy_arrays(self):
@@ -184,13 +222,22 @@ class AtDat():
         
 
         # Initialize output dictionaries
-        self.max_length = {}
         self.Earrs = {}
         self.excarrs = {}
         self.gtot_lists = {}
         self.hnuarrs = []
         self.Pnarrs = {}
-        
+
+        # Find max_length of all arrays first
+        lengths = []
+        for uplo in ['lo', 'up']:
+            for Z in self.Zkeys:
+                tmp = []
+                [tmp.extend(self.Etot[uplo][Z][str(e)])
+                     for e in list(self.Etot[uplo][Z].keys())]
+                lengths.append(len(tmp))
+        max_length = max(lengths)
+        self.max_length = max_length # Longest length array, i.e. maximum number of complexes for a given charge state
 
         # Zs = [Zkey for Zkey in list(Etot['lo'].keys()) if list(Etot['up'][Zkey].keys())] # Keep only calculated charge states
         for uplo in ['lo', 'up']:
@@ -217,7 +264,7 @@ class AtDat():
                     tmphnu.extend(self.hnu[Z][exc])
     
                     tmpPn.extend(self.Pn[uplo][Z][exc])
-                    
+                
                 Earrs.append(np.array(tmpEtot))
                 Pnarrs.append(np.array(tmpPn))
                 excarrs.append(np.array(tmpexc))
@@ -227,10 +274,8 @@ class AtDat():
             # To enable slicing, 0-pad all state-resolved arrays. Shape: [Number charge states, max_length]
             # 0 values in gtot_lists reslut in 0 contribution to partition functions, 0 effect on Saha-Boltzmann
             # Pad no zeroes at beginning, out to max_length at end: pad_width = [(0, max_length-len(item))]
-            max_length = max([len(item) for item in excarrs]) # Longest length array, i.e. maximum number of complexes for a given charge state
-            self.max_length[uplo] = max_length
             self.Earrs[uplo]      = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in Earrs]) 
-            self.excarrs[uplo]    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in excarrs])
+            self.excarrs[uplo]    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(-1)) for item in excarrs]) # Pad -1 to avoid confusion with 0
             self.hnuarrs    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in hnuarrs]) # Doesn't need to be a dictionary
     
             # Shell-resoled quantities. Pad 1st dimension only. Shape (Z, max_length, nmax)
@@ -238,6 +283,14 @@ class AtDat():
             self.gtot_lists[uplo] = np.array([np.pad(item, [(0, max_length-len(item)), (0,0)], constant_values=int(0)) for item in glists]) 
                 # gtot = total statistical weight of each configuration, of each shell, even those not available for transition.
                 # Atom's total statweight = np.prod(self.gtot_lists['lo'], axis=-1)
+                
+            # Define satellite array according to the core (n=1,2) population
+            self.satarrs = self.Pnarrs['lo'][:,:,:2].sum(axis=-1) # Sum over inner population
+            
+            # Get list of unique satellites
+            sats = np.unique(self.satarrs)[-1::-1] # Sats in decreasing value, least-ionized first
+            self.sats = sats[sats>0] # Remove unassigned=0
+
 
         return
     
@@ -281,7 +334,7 @@ class AtDat():
 
         Zbar = np.zeros(shape=[self.NT,self.Nn]) # Mean ionization state
         psaha = np.zeros(shape=[self.NT,self.Nn,len(self.Zkeys)+1]) # Saha charge state populations. Shape T, Ne, Z+1
-        pboltz = np.zeros(shape=[self.NT,self.Nn,len(self.Zkeys), self.max_length['lo']]) # Boltzmann state populations. Shape T, Ne, Z, state
+        pboltz = np.zeros(shape=[self.NT,self.Nn,len(self.Zkeys), self.max_length]) # Boltzmann state populations. Shape T, Ne, Z, state
         for idx, items in enumerate(it.product(KT,NE)):
             kT, ne = items
             i, j = np.unravel_index(idx, shape=(self.NT,self.Nn))
@@ -331,7 +384,7 @@ class AtDat():
         # Run Boltzmann on each charge state over rho grid
         g = np.prod(self.gtot_lists['lo'], axis=-1)
 
-        pboltz_rho = np.zeros(shape=[self.NT,self.Nrho,len(self.Zkeys), self.max_length['lo']]) # Shape T, Ne, Z, state
+        pboltz_rho = np.zeros(shape=[self.NT,self.Nrho,len(self.Zkeys), self.max_length]) # Shape T, Ne, Z, state
         for idx, items in enumerate(it.product(self.KT,rho_grid)):
             kT, __ = items
             i, j = np.unravel_index(idx, shape=(self.NT,self.Nrho))
@@ -621,6 +674,17 @@ class AtDat():
             for exc in self.exc_list:
                 cond = self.excarrs[uplo]==exc
                 
+                # Troubleshoot correspondence between cond and hnu
+                # z=0
+                # print(exc)
+                # print(cond[z])
+                # print(self.Pnarrs['lo'][z])
+                # print(self.Pnarrs['up'][z])
+                
+                # print(self.hnuarrs[z])
+                # print(self.hnuarrs[z,cond[z]])
+                
+                
                 # Sum over allowed conditions, once for each ionization state
                 tmp_hnu = np.array([np.sum((self.hnuarrs*pops*gf)[Ellipsis,i,c], axis=-1) \
                                 / np.sum( (pops*gf)[Ellipsis,i,c], axis=-1)
@@ -631,7 +695,17 @@ class AtDat():
                 
                 tmp_hnu = np.moveaxis(tmp_hnu, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
                 tmp_pgf = np.moveaxis(tmp_pgf, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
-
+                
+                # Troubleshoot if NaNs or zeros are in the hnu sum/average
+                # breakpoint()
+                # [print(self.hnuarrs[i,c]) for i,c in enumerate(cond)]
+                # [print(gf[i,c]) for i,c in enumerate(cond)]
+                # if np.any([self.hnuarrs[i,c]==0 for i,c in enumerate(cond)]) \
+                #     or np.any([gf[i,c]==0 for i,c in enumerate(cond)]) \
+                #     or np.any(np.isnan([self.hnuarrs[i,c] for i,c in enumerate(cond)])) \
+                #     or np.any(np.isnan([gf[i,c] for i,c in enumerate(cond)])):
+                #     breakpoint()
+                
                 hnu_avg.append(tmp_hnu)
                 pgf.append(tmp_pgf)
                 
@@ -640,22 +714,26 @@ class AtDat():
             
         elif resolve=='line':
             # Return line-complex resolved line centers
-            for zidx in range(pops.shape[2]):
-                tmp_pgf = np.zeros([*pops.shape[:2],0]) # Populations x weighted osc.str.
-                tmp_hnu = [] # Transition energies within satellite 
-                for exc in self.exc_list:
-                    if (zidx-exc)>=0:
-                        # Charge state index = zidx-exc to group within line-complex
-                        cond = self.excarrs[uplo][zidx-exc]==exc                    
-                        tmp_hnu.extend(self.hnuarrs[zidx-exc,cond]) # Lower ionization, higher excitation
-                        tmp_pgf = np.dstack([tmp_pgf, (pops*gf)[:,:,zidx-exc,cond]])
+            tmp_pgf = np.zeros([*pops.shape[:2],0]) # Populations x weighted osc.str.
+            tmp_hnu = [] # Transition energies within satellite 
+                        
+            # Iterate over each satellite complex
+            for s in self.sats:
+                cond = self.satarrs==s # 2-D condition, across ionization and excitation
+                
+                # Sum over allowed conditions, over all corresponding excitation and ionization states
+                # cond is non-regular over ionization and excitation, so only sum(axis=-1)
+                tmp_hnu = (self.hnuarrs*pops*gf)[Ellipsis,cond].sum(axis=-1) \
+                                / (pops*gf)[Ellipsis,cond].sum(axis=-1) # Shape [NT, Nrho]
 
-                # Sum over allowed conditions, once for each ionization state
-                hnu_avg.append(np.sum(tmp_hnu*tmp_pgf, axis=-1) \
-                               / np.sum(tmp_pgf, axis=-1)) # Shape [ionization, NT, Nrho]
-                pgf.append(np.sum(tmp_pgf, axis=-1))
+                tmp_pgf = (pops*gf)[Ellipsis,cond].sum(axis=-1) # Shape [NT, Nrho]
+                
+                hnu_avg.append(tmp_hnu) # Shape [ionization, NT, Nrho]
+                pgf.append(tmp_pgf)     # Shape [ionization, NT, Nrho]
+                    
             hnu_avg = np.moveaxis(hnu_avg, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
             pgf = np.moveaxis(pgf, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
+                   
         if return_weight:
             return hnu_avg, pgf
             
@@ -772,7 +850,7 @@ class AtDat():
         opac = lines * np.expand_dims(self.kappa_line, axis=-1)
         
         # Sum over Zbar and complexes, axis=(2,3)
-        self.kappa = np.sum(opac, axis=(2,3)) # cm^2/g
+        self.kappa = np.nansum(opac, axis=(2,3)) # cm^2/g
         
         return
     
