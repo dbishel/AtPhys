@@ -151,6 +151,7 @@ class AtDat():
                             pops = lo
                     
                     for Pni in pops:
+                        
                         if len(Pni)==0:
                             # Append NaN to each, to keep same length as corresponding up/lo
                             Enx.append(np.nan)
@@ -221,13 +222,22 @@ class AtDat():
         
 
         # Initialize output dictionaries
-        self.max_length = {}
         self.Earrs = {}
         self.excarrs = {}
         self.gtot_lists = {}
         self.hnuarrs = []
         self.Pnarrs = {}
-        
+
+        # Find max_length of all arrays first
+        lengths = []
+        for uplo in ['lo', 'up']:
+            for Z in self.Zkeys:
+                tmp = []
+                [tmp.extend(self.Etot[uplo][Z][str(e)])
+                     for e in list(self.Etot[uplo][Z].keys())]
+                lengths.append(len(tmp))
+        max_length = max(lengths)
+        self.max_length = max_length # Longest length array, i.e. maximum number of complexes for a given charge state
 
         # Zs = [Zkey for Zkey in list(Etot['lo'].keys()) if list(Etot['up'][Zkey].keys())] # Keep only calculated charge states
         for uplo in ['lo', 'up']:
@@ -264,8 +274,6 @@ class AtDat():
             # To enable slicing, 0-pad all state-resolved arrays. Shape: [Number charge states, max_length]
             # 0 values in gtot_lists reslut in 0 contribution to partition functions, 0 effect on Saha-Boltzmann
             # Pad no zeroes at beginning, out to max_length at end: pad_width = [(0, max_length-len(item))]
-            max_length = max([len(item) for item in excarrs]) # Longest length array, i.e. maximum number of complexes for a given charge state
-            self.max_length[uplo] = max_length
             self.Earrs[uplo]      = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in Earrs]) 
             self.excarrs[uplo]    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(-1)) for item in excarrs]) # Pad -1 to avoid confusion with 0
             self.hnuarrs    = np.array([np.pad(item, [(0, max_length-len(item))], constant_values=int(0)) for item in hnuarrs]) # Doesn't need to be a dictionary
@@ -275,6 +283,14 @@ class AtDat():
             self.gtot_lists[uplo] = np.array([np.pad(item, [(0, max_length-len(item)), (0,0)], constant_values=int(0)) for item in glists]) 
                 # gtot = total statistical weight of each configuration, of each shell, even those not available for transition.
                 # Atom's total statweight = np.prod(self.gtot_lists['lo'], axis=-1)
+                
+            # Define satellite array according to the core (n=1,2) population
+            self.satarrs = self.Pnarrs['lo'][:,:,:2].sum(axis=-1) # Sum over inner population
+            
+            # Get list of unique satellites
+            sats = np.unique(self.satarrs)[-1::-1] # Sats in decreasing value, least-ionized first
+            self.sats = sats[sats>0] # Remove unassigned=0
+
 
         return
     
@@ -318,7 +334,7 @@ class AtDat():
 
         Zbar = np.zeros(shape=[self.NT,self.Nn]) # Mean ionization state
         psaha = np.zeros(shape=[self.NT,self.Nn,len(self.Zkeys)+1]) # Saha charge state populations. Shape T, Ne, Z+1
-        pboltz = np.zeros(shape=[self.NT,self.Nn,len(self.Zkeys), self.max_length['lo']]) # Boltzmann state populations. Shape T, Ne, Z, state
+        pboltz = np.zeros(shape=[self.NT,self.Nn,len(self.Zkeys), self.max_length]) # Boltzmann state populations. Shape T, Ne, Z, state
         for idx, items in enumerate(it.product(KT,NE)):
             kT, ne = items
             i, j = np.unravel_index(idx, shape=(self.NT,self.Nn))
@@ -368,7 +384,7 @@ class AtDat():
         # Run Boltzmann on each charge state over rho grid
         g = np.prod(self.gtot_lists['lo'], axis=-1)
 
-        pboltz_rho = np.zeros(shape=[self.NT,self.Nrho,len(self.Zkeys), self.max_length['lo']]) # Shape T, Ne, Z, state
+        pboltz_rho = np.zeros(shape=[self.NT,self.Nrho,len(self.Zkeys), self.max_length]) # Shape T, Ne, Z, state
         for idx, items in enumerate(it.product(self.KT,rho_grid)):
             kT, __ = items
             i, j = np.unravel_index(idx, shape=(self.NT,self.Nrho))
@@ -658,6 +674,17 @@ class AtDat():
             for exc in self.exc_list:
                 cond = self.excarrs[uplo]==exc
                 
+                # Troubleshoot correspondence between cond and hnu
+                # z=0
+                # print(exc)
+                # print(cond[z])
+                # print(self.Pnarrs['lo'][z])
+                # print(self.Pnarrs['up'][z])
+                
+                # print(self.hnuarrs[z])
+                # print(self.hnuarrs[z,cond[z]])
+                
+                
                 # Sum over allowed conditions, once for each ionization state
                 tmp_hnu = np.array([np.sum((self.hnuarrs*pops*gf)[Ellipsis,i,c], axis=-1) \
                                 / np.sum( (pops*gf)[Ellipsis,i,c], axis=-1)
@@ -678,7 +705,7 @@ class AtDat():
                 #     or np.any(np.isnan([self.hnuarrs[i,c] for i,c in enumerate(cond)])) \
                 #     or np.any(np.isnan([gf[i,c] for i,c in enumerate(cond)])):
                 #     breakpoint()
-
+                
                 hnu_avg.append(tmp_hnu)
                 pgf.append(tmp_pgf)
                 
@@ -687,34 +714,26 @@ class AtDat():
             
         elif resolve=='line':
             # Return line-complex resolved line centers
-            for zidx in range(pops.shape[2]):
-                tmp_pgf = np.zeros([*pops.shape[:2],0]) # Populations x weighted osc.str.
-                tmp_hnu = [] # Transition energies within satellite 
-                for exc in self.exc_list:
-                    if (zidx-exc)>=0:
-                        # Charge state index = zidx-exc to group within line-complex
-                        cond = self.excarrs[uplo][zidx-exc]==exc                    
-                        tmp_hnu.extend(self.hnuarrs[zidx-exc,cond]) # Lower ionization, higher excitation
-                        tmp_pgf = np.dstack([tmp_pgf, (pops*gf)[:,:,zidx-exc,cond]])
-
-                        # Troubleshoot if NaNs or zeros are in the hnu sum/average
-                        # breakpoint()
-                        # print(self.hnuarrs[zidx-exc,cond])
-                        # print(gf[zidx-exc,cond])
+            tmp_pgf = np.zeros([*pops.shape[:2],0]) # Populations x weighted osc.str.
+            tmp_hnu = [] # Transition energies within satellite 
                         
-                # Sum over allowed conditions, once for each ionization state
-                hnu_avg.append(np.sum(tmp_hnu*tmp_pgf, axis=-1) \
-                               / np.sum(tmp_pgf, axis=-1)) # Shape [ionization, NT, Nrho]
-                pgf.append(np.sum(tmp_pgf, axis=-1))
+            # Iterate over each satellite complex
+            for s in self.sats:
+                cond = self.satarrs==s # 2-D condition, across ionization and excitation
+                
+                # Sum over allowed conditions, over all corresponding excitation and ionization states
+                # cond is non-regular over ionization and excitation, so only sum(axis=-1)
+                tmp_hnu = (self.hnuarrs*pops*gf)[Ellipsis,cond].sum(axis=-1) \
+                                / (pops*gf)[Ellipsis,cond].sum(axis=-1) # Shape [NT, Nrho]
 
-                # if np.any([self.hnuarrs[i,c]==0 for i,c in enumerate(cond)]) \
-                #     or np.any([gf[i,c]==0 for i,c in enumerate(cond)]) \
-                #     or np.any(np.isnan([self.hnuarrs[i,c] for i,c in enumerate(cond)])) \
-                #     or np.any(np.isnan([gf[i,c] for i,c in enumerate(cond)])):
-                #     breakpoint()
-
+                tmp_pgf = (pops*gf)[Ellipsis,cond].sum(axis=-1) # Shape [NT, Nrho]
+                
+                hnu_avg.append(tmp_hnu) # Shape [ionization, NT, Nrho]
+                pgf.append(tmp_pgf)     # Shape [ionization, NT, Nrho]
+                    
             hnu_avg = np.moveaxis(hnu_avg, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
             pgf = np.moveaxis(pgf, [0,1,2], [2,0,1]) # Shape [NT, Nrho, ionization]
+                   
         if return_weight:
             return hnu_avg, pgf
             

@@ -32,8 +32,8 @@ A = 51.996 # Nucleon number
 
 Zbar_min = ZZ - 15
 nmax = 5 # Maximum allowed shell
-exc_list = [0,1,2,] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
-# exc_list = [0,1] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+exc_list = np.arange(6) # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+# exc_list = [0,1,2] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
 pf = 1
 
 # Run model
@@ -68,7 +68,7 @@ Nrho = 12
 rho_grid = np.logspace(-1,3, num=Nrho)
 
 # Estimate IPD for Saha and interpolate onto NE vector
-if 1: # Skip while testing
+if 0: # Skip while testing
     Zgrid_rho, __, __, __, __, __, CLgrid_rho = dense_plasma(Z=ZZ, Zbar=1, A=A, Ts=KT, rhos=rho_grid,
                                                               CL='IS Atzeni')
     
@@ -109,7 +109,7 @@ if 0:
 
 # %% Populations and gf
 # Run Saha-Boltzmann
-ad.saha_boltzmann(KT, NE, IPD=CLgrid) # NE-indexed
+ad.saha_boltzmann(KT, NE, IPD=0) # NE-indexed
 ad.saha_boltzmann_rho(rho_grid) # rho_grid-indexed
 
 # View Zbar from Saha-Boltzmann
@@ -145,12 +145,13 @@ gf = ad.get_gf(1,0,2,1, return_gs=False)
 
 #### Average hnu
 # Keep indexed to rho_grid throughout
-# Satellite-resolved
-sat_avg, pgf_sat = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization',
+# Averaged within an excitation degree
+hnu_exc, pgf_exc = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization',
                              return_weight=True) # Shape: [excitation, NT, Nrho, ionization]
-# Line-complex resolved line centers
-hnu_avg, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
-                                  return_weight=True) # Shape: [excitation, NT, Nrho, ionization]
+# Average within a satellite complex
+# breakpoint()
+hnu_sat, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
+                                  return_weight=True) # Shape: [NT, Nrho, satellite]
 
 # %% Opacity
 if 0:
@@ -195,8 +196,8 @@ print('{0:0.2f} eV, {1:0.2f} g/cc'.format(KT[Tidx], rho_grid[rhoidx]))
 print('{0:5s} | {1:3s} | {2:10s} | {3:10s}'.format('Zbar','exc', 'pop x gf', 'pop x gf (norm)'))
 [print('{0:5s} | {1:3d} | {2:10.1e} | {3:10.1e}'.format(
     ad.Zkeys[zidx], e,
-    pgf_sat[e,Tidx,rhoidx,zidx],
-    pgf_sat[e,Tidx,rhoidx,zidx]/pgf_sat[0,Tidx,rhoidx,zidx])) for e in exc_list]
+    pgf_exc[e,Tidx,rhoidx,zidx],
+    pgf_exc[e,Tidx,rhoidx,zidx]/pgf_exc[0,Tidx,rhoidx,zidx])) for e in exc_list]
 
 print('Saha balance')
 [print('{0:s} : {1:8.1e}'.format(ad.Zkeys[zidx], ad.psaha[Tidx,rhoidx,zidx])) for zidx in range(ad.psaha.shape[-1]-1)];
@@ -216,11 +217,15 @@ for e in exc_list:
 
 # %% Plot: Excitation-resolved lines
 rhoidx = 7
-zidx = len(ad.Zkeys)-5 # 3 = N-like
+
+# Define satellite to zoom in on
+sat = 6 # Isoelectronic
+sidx = np.where(ad.sats==sat)[0][0] # Satellite index
+zidx = np.where(np.isin(ad.Zkeys, '{0:0.0f}'.format(ad.Z-sat)))[0][0] # Corresponding ionization index
 
 # Single charge-state
 plt.figure(figsize=[4,3])
-[plt.semilogx(KT, sat_avg[eidx,:,rhoidx,zidx-eidx],
+[plt.semilogx(KT, hnu_exc[eidx,:,rhoidx,zidx-eidx],
           color='C{0:d}'.format(eidx),
           label='Z*={0:s}, exc={1:d} new'.format(ad.Zkeys[zidx-eidx], eidx))
      for eidx in exc_list if (zidx-eidx)>=0]
@@ -230,7 +235,7 @@ plt.legend()
 
 # All charge states
 plt.figure(figsize=[4,3])
-[plt.semilogx(KT, sat_avg[eidx,:,rhoidx,:],
+[plt.semilogx(KT, hnu_exc[eidx,:,rhoidx,:],
           color='C{0:d}'.format(eidx),
           # label='Z*={0:s}, exc={1:d} new'.format(ad.Zkeys[zidx-eidx], eidx)
           )
@@ -251,13 +256,13 @@ axs[0].set(ylabel='Zbar',
            title=r'$\rho$={0:0.1e} g/cm$^3$'.format(rho_grid[rhoidx]))
 
 # Satellite resolved line centers
-[axs[1].plot(KT, sat_avg[eidx,:,rhoidx,zidx-eidx],
+[axs[1].plot(KT, hnu_exc[eidx,:,rhoidx,zidx-eidx],
           color='C{0:d}'.format(eidx),
           label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zidx-eidx], eidx))
      for eidx in exc_list if (zidx-eidx)>=0]
 
 # Line-complex resolved line centers
-axs[1].plot(KT, hnu_avg[:,rhoidx,zidx], label='Averaged', color='k')
+axs[1].plot(KT, hnu_sat[:,rhoidx,sidx], label='Averaged', color='k')
 
 axs[1].set(xlabel='kT (eV)',
           ylabel='hnu (eV)')
@@ -266,7 +271,7 @@ plt.legend(bbox_to_anchor=(1.,1))
 
 #### All satellite complexes, average only
 # plt.figure(figsize=[4,3])
-# plt.semilogx(KT, hnu_avg[:,rhoidx,:], label=ad.Zkeys)
+# plt.semilogx(KT, hnu_sat[:,rhoidx,:], label=ad.Zkeys)
 # plt.gca().set(ylim=[5350,5800],
 #               xlabel='kT (eV)',
 #               ylabel='hnu (eV)')
@@ -281,16 +286,16 @@ axs[0].set(ylabel='Zbar',
                                                                         ad.Zkeys[zidx]))
 
 
-[axs[1].plot(KT, sat_avg[eidx,:,rhoidx,zidx-eidx],
+[axs[1].plot(KT, hnu_exc[eidx,:,rhoidx,zidx-eidx],
           color='C{0:d}'.format(eidx),
           label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zidx-eidx], eidx))
      for eidx in exc_list if (zidx-eidx)>=0]
 
 # Line-complex resolved line centers
-axs[1].scatter(KT, hnu_avg[:,rhoidx,zidx], label='Averaged', color='k',
+axs[1].scatter(KT, hnu_sat[:,rhoidx,sidx], label='Averaged', color='k',
             facecolor='None')
-axs[1].scatter(KT, hnu_avg[:,rhoidx,zidx], color='k',
-            alpha=pgf[:,rhoidx,zidx]/np.nanmax(pgf[:,rhoidx,zidx]))
+axs[1].scatter(KT, hnu_sat[:,rhoidx,sidx], color='k',
+            alpha=pgf[:,rhoidx,sidx]/np.nanmax(pgf[:,rhoidx,sidx]))
 
 axs[1].set(xlabel='kT (eV)',
           ylabel='hnu (eV)',
@@ -301,26 +306,36 @@ axs[1].set(xlabel='kT (eV)',
 
 axs[1].legend(bbox_to_anchor=(1.,0.6))
 
-# # All complexes
-# fig, axs = plt.subplots(len(ad.Zkeys)-1, figsize=[8,24], sharex=True)
-# zmin = 1
-# for zzz in range(zmin,len(ad.Zkeys)):
-#     [axs[zzz-zmin].plot(KT, sat_avg[eidx,:,rhoidx,zzz-eidx],
-#               color='C{0:d}'.format(eidx),
-#               label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zzz-eidx], eidx))
-#          for eidx in exc_list if (zzz-eidx)>=0]
+# Each satellite
+smin = 1
+fig, axs = plt.subplots(len(ad.sats)-smin, figsize=[8,24], sharex=True)
+for axi,sss in enumerate(ad.sats[smin:][-1::-1]):
+    si = np.where(ad.sats==sss)[0][0]
+    zi = np.where(np.isin(ad.Zkeys, '{0:0.0f}'.format(ad.Z-sss)))[0][0]
+    cond = np.where(ad.satarrs==sss)
+    # for i,e in zip(*cond):
+    #     axs[axi].plot(KT, ad.hnuarrs[i,e], color='C{0:0.0f}'.format(ad.excarrs['lo'][i,e]))
+    [axs[axi].plot(KT, hnu_exc[eidx,:,rhoidx,:],
+              color='C{0:d}'.format(eidx),
+              )
+          for eidx in exc_list]
     
-#     # Line-complex resolved line centers
-#     axs[zzz-zmin].scatter(KT, hnu_avg[:,rhoidx,zzz], label='Averaged', color='k',
-#                 facecolor='None')
-#     axs[zzz-zmin].scatter(KT, hnu_avg[:,rhoidx,zzz], color='k',
-#                 alpha=pgf[:,rhoidx,zzz]/np.nanmax(pgf[:,rhoidx,zzz]))
+    # Line-complex resolved line centers
+    axs[axi].scatter(KT, hnu_sat[:,rhoidx,si], label='Averaged', color='k',
+                facecolor='None')
+    axs[axi].scatter(KT, hnu_sat[:,rhoidx,si], color='k',
+                alpha=pgf[:,rhoidx,si]/np.nanmax(pgf[:,rhoidx,si]))
     
-# axs[zzz-zmin].set(xlabel='kT (eV)',
-#           ylabel='hnu (eV)',
-#           # xscale='log',
-#             xlim=[0,1100],
-#           )
+    axs[axi].set(ylim= [np.nanmin(hnu_sat[:,rhoidx,si]),
+                        # np.nanmax(hnu_sat[:,rhoidx,si])
+                        hnu_exc[0,-1,-1,zi] + 1
+                        ])
+    
+axs[-1].set(xlabel='kT (eV)',
+          ylabel='hnu (eV)',
+          # xscale='log',
+            xlim=[0,1100],
+          )
 
 
 

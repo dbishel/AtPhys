@@ -20,7 +20,7 @@ sys.path.append('../FAC')
 from fac_write_configs import generate_complexes, all_counts
 
 # %% Writing
-NE = 10
+NE = 9
 nmax = 5
 
 for e in [0,1,2]:

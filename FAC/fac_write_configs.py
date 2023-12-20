@@ -154,35 +154,42 @@ def generate_complexes(NE, nmax, exc=1, fac_readable=True):
         clo = np.zeros(nmax).astype(int) # clo = core-low
         clo[:2] =[2,8-exc]
         
-        if exc==0: # If ground state, and therefore n=2 is full, there is no upper state            
-            # Wrap in a list to enable iteration later           
-            lo = [clo]
-            up = [[]]
+        # if exc==0: # If ground state, and therefore n=2 is full, there is no upper state            
+        #     # Wrap in a list to enable iteration later           
+        #     lo = [clo]
+        #     up = [[]]
             
-        else: # If excited, and therefore n=2 is not full, construct upper state
-            cup = clo * 1 # Copy lower populations
-            
-            # Promote n=1 electron to n=2
-            cup[0] -= 1 
-            cup[1] += 1
+        # else: # If excited, and therefore n=2 is not full, construct upper state
+        cup = clo * 1 # Copy lower populations
+        
+        # Promote n=1 electron to n=2
+        cup[0] -= 1 
+        cup[1] += 1
 
-            Nexc = NE - (10-exc) # Number of electrons in n>2 shells
+        Nexc = NE - (10-exc) # Number of electrons in n>2 shells
+        
+        # Generator object. All ways of assigning Nexc electrons to shells n>2
+        if Nexc>0:
+            combinations = all_counts(Nexc, nmax-2)
+        else:
+            combinations = [[0,0,0]] # Only occurs for ground-state Ne-like
+        
+        lo, up = [], [] # Initiate lists
+        for c in combinations: # Append each upper shell population to up and lo
+            # Copy core configuration
+            ltmp = clo * 1
+            utmp = cup * 1
             
-            # Generator object. All ways of assigning Nexc electrons to shells n>2
-            combinations = all_counts(Nexc, nmax-2) 
+            # Append upper shell populations
+            ltmp[2:] = c
+            utmp[2:] = c
             
-            lo, up = [], [] # Initiate lists
-            for c in combinations: # Append each upper shell population to up and lo
-                # Copy core configuration
-                ltmp = clo * 1
-                utmp = cup * 1
-                
-                # Append upper shell populations
-                ltmp[2:] = c
-                utmp[2:] = c
-                
-                lo.append(ltmp)
-                up.append(utmp)
+            lo.append(ltmp)
+            up.append(utmp)
+            
+        if exc==0:
+            # If ground state, and therefore n=2 is full, there is no upper state   
+            up = ['']*len(up) # Replace upper states with an equal number of empty strings
 
     if not(fac_readable):
         return [lo, up]
