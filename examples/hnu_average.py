@@ -31,9 +31,9 @@ ZZ = 24 # Nuclear charge
 A = 51.996 # Nucleon number
 
 Zbar_min = ZZ - 10
-nmax = 3 # Maximum allowed shell
-exc_list = np.arange(6) # Excitation degrees to consider (lower state is ground state, singly excited, ...)
-# exc_list = [0,1,2] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+nmax = 5 # Maximum allowed shell
+# exc_list = np.arange(2) # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+exc_list = [0,1,2] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
 pf = 1
 
 # Run model
@@ -154,7 +154,7 @@ hnu_sat, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
                                   return_weight=True) # Shape: [NT, Nrho, satellite]
 
 # %% Opacity
-if 0:
+if 1:
     # Generate spectra
     ad.append_lineshape(3*np.ones(ad.pstate_rho.shape), 'G') # Gaussian lineshape
     # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'L')
@@ -216,15 +216,15 @@ for e in exc_list:
     
 
 # %% Plot: Excitation-resolved lines
-rhoidx = 1
+# rhoidx = 1
 rhoidx = 7
 
 # Define satellite to zoom in on
-sat = 6 # Isoelectronic
+sat = 7 # Isoelectronic
 sidx = np.where(ad.sats==sat)[0][0] # Satellite index
 zidx = np.where(np.isin(ad.Zkeys, '{0:0.0f}'.format(ad.Z-sat)))[0][0] # Corresponding ionization index
 
-# Single charge-state
+#### Single charge-state
 plt.figure(figsize=[4,3])
 [plt.semilogx(KT, hnu_exc[eidx,:,rhoidx,zidx-eidx],
           color='C{0:d}'.format(eidx),
@@ -234,7 +234,7 @@ plt.gca().set(xlabel='kT (eV)',
               ylabel='hnu (eV)',)
 plt.legend()
 
-# All charge states
+#### All charge states
 plt.figure(figsize=[4,3])
 [plt.semilogx(KT, hnu_exc[eidx,:,rhoidx,:],
           color='C{0:d}'.format(eidx),
@@ -300,7 +300,7 @@ axs[1].set(ylim= [np.nanmin(hnu_sat[:,rhoidx,sidx]),
 #           label='Z*={0:s}, exc={1:d}'.format(ad.Zkeys[zidx-eidx], eidx))
 #      for eidx in exc_list if (zidx-eidx)>=0]
 
-# Line-complex resolved line centers
+#### Line-complex resolved line centers
 axs[1].scatter(KT, hnu_sat[:,rhoidx,sidx], label='Averaged', color='k',
             facecolor='None')
 axs[1].scatter(KT, hnu_sat[:,rhoidx,sidx], color='k',
@@ -315,7 +315,7 @@ axs[1].set(xlabel='kT (eV)',
 
 axs[1].legend(bbox_to_anchor=(1.,0.6))
 
-# Each satellite
+#### Each satellite
 smin = 1
 fig, axs = plt.subplots(len(ad.sats)-smin, figsize=[8,24], sharex=True)
 for axi,sss in enumerate(ad.sats[smin:][-1::-1]):
@@ -345,6 +345,64 @@ axs[-1].set(xlabel='kT (eV)',
           # xscale='log',
             xlim=[0,1100],
           )
+
+# %% Plot: hnu shift wrt parent transition
+# Get Z indices corresponding to satellite ground-states
+cond = [np.where(np.isin(ad.Zkeys,'{0:0.0f}'.format(ad.Z-z)))[0][0] for z in ad.sats]
+# cond = [np.isin(ad.Zkeys,'{0:0.0f}'.format(ad.Z-z)) for z in ad.sats]
+shift = np.array([hnu_sat[:,:,i] - hnu_exc[0,:,:,c] for i,c in enumerate(cond)])  # Satellite average minus Parent. 
+shift = np.moveaxis(shift, [0,1,2],[2,0,1]) # Shape [satellite, T, rho] -> [T,rho, satellite]
+
+#### Shift, satellite average - parent
+labs = ['Iso={0:0.0f}'.format(s) for s in ad.sats]
+plt.figure(figsize=(4,3))
+plt.plot(KT, shift[:,rhoidx,:], label=labs)
+plt.gca().set(xlabel='kT (eV)',
+          ylabel='dhnu (eV)',
+          # xscale='log',
+          title='{0:0.1f} g/cm$^3$, nmax={1:0.0f}, Iso max={2:d}'.format(rho_grid[rhoidx],
+                                                                         ad.nmax,
+                                                                         ad.Z-int(ad.Zkeys[0])),
+            xlim=[0,1100],
+            ylim=[-60,None]
+          )
+plt.legend()
+
+
+#### Absolute hnu of all excitations and satellite averages
+plt.figure()
+[plt.plot(KT, hnu_exc[eidx,:,rhoidx,:],
+          color='C{0:d}'.format(eidx),
+          )
+      for eidx in exc_list]
+# [plt.scatter(KT, hnu_sat[:,rhoidx,sidx], label='Averaged', color='k',
+#             facecolor='None') for sidx in range(hnu_sat.shape[-1])]
+[plt.plot(KT, hnu_sat[:,rhoidx,sidx], label='Averaged', color='k', ls='--')
+     for sidx in range(hnu_sat.shape[-1])]
+# .set(ylim= [np.nanmin(hnu_sat[:,rhoidx,sidx]),
+#                     # np.nanmax(hnu_sat[:,rhoidx,si])
+#                     hnu_exc[0,-1,-1,zidx] + 1
+#                     ])
+
+Tidxs = [np.where(KT<300)[0][-1],
+         np.where(KT>400)[0][0]]
+
+# print('Shift for T = {0:0.0f} to {1:0.0f} eV'.format(*[KT[i] for i in Tidxs]))
+# [print('Iso {0:d} : {1:0.1f} eV'.format(ad.sats[i], 
+#                                         hnu_sat[Tidxs[1],rhoidx,i] - hnu_sat[Tidxs[0],rhoidx,i]))
+#          for i in range(len(ad.sats))];
+
+print('Shift for rho = {0:0.1f} g/cc'.format(rho_grid[rhoidx]))
+print('{0:5s} | {1:10s} | {2:10s} | {3:10s}'.format('Iso',
+                                                    'T = {0:0.0f} eV'.format(KT[Tidxs[0]]),
+                                                    'T = {0:0.0f} eV'.format(KT[Tidxs[1]]),
+                                                    'Difference'))    
+
+[print('{0:5d} | {1:10.1f} | {2:10.1f} | {3:10.1f}'.format(ad.sats[i], 
+                                                           shift[Tidxs[0],rhoidx,i],
+                                                           shift[Tidxs[1],rhoidx,i],
+                                                           shift[Tidxs[1],rhoidx,i]-shift[Tidxs[0],rhoidx,i]))
+         for i in range(len(ad.sats))];
 
 # %% Plot: opacity
 #### Plot opacity image versus T at one rho
