@@ -1481,16 +1481,6 @@ if __name__=='__main__':
     
     sh, ad = calculate_boltzmann_shift(Z=ZZ, A=A, Zmin=Zbar_min, nmax=nmax, exc_list=exc_list,
                                    KT=KT, NE=NE, rho_grid=rho_grid, IPD=0, pf=1)
-
-    # # Run model
-    # ad = AtDat(ZZ, A, Zbar_min, nmax, exc_list,)
-    # ad.get_atomicdata(vb=0)
-    # ad.get_hnu(np.array(ad.Zkeys).astype(int))
-    # ad.tidy_arrays()
-
-    # # Run Saha-Boltzmann
-    # ad.saha_boltzmann(KT, NE, IPD=0)
-    # ad.saha_boltzmann_rho(rho_grid)
     
     # # Generate spectra
     # # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'G')
