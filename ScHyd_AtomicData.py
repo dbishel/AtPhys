@@ -296,7 +296,7 @@ class AtDat():
 
         return
     
-    def saha_boltzmann(self, KT, NE, IPD=0):
+    def saha_boltzmann(self, KT, NE, IPD=0, fn_screening=None):
         ''' Calculates Saha-Boltzmann balance using atomic data (energies, statweights)
         of the lower state. In future could include up/lo as an argument to allow user the choice
         at run time
@@ -310,6 +310,8 @@ class AtDat():
             Electron density, cm^-3.
         IPD : TYPE, optional
             Ionizaiton potential depression. The default is 0.
+        fn_screening : str
+            More screening coefficients directory.
 
         Returns
         -------
@@ -324,7 +326,7 @@ class AtDat():
         self.NT = len(KT)
         self.Nn = len(NE)
         
-        Ip = get_ionization(self.Z, return_energy_levels=False)
+        Ip = get_ionization(self.Z, return_energy_levels=False, fn_screening=fn_screening)
         Ip = np.array([Ip[int(item)] for item in self.Zkeys])
         self.Ip = Ip
         

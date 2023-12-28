@@ -348,7 +348,7 @@ class AvIon():
         return
         
 
-def get_ionization(Z, return_energy_levels=False):
+def get_ionization(Z, return_energy_levels=False, fn_screening=None):
     ''' Calculates ionization potential for isolated atoms.
     '''
     
@@ -356,7 +356,7 @@ def get_ionization(Z, return_energy_levels=False):
     En = []
     
     for Zbar in range(Z+1):
-        sh = AvIon(Z,Zbar)
+        sh = AvIon(Z,Zbar, fn=fn_screening)
 
         sh.get_Pn()
         sh.get_Qn()
