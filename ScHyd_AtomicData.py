@@ -38,7 +38,7 @@ from fac_write_configs import generate_complexes
 
 class AtDat():
     
-    def __init__(self, Z, A, Zbar_min=0, nmax=5, exc_list=[0,1]):
+    def __init__(self, Z, A, Zbar_min=0, nmax=5, exc_list=[0,1], fn=None):
         
         ##### Constants #####
         self.mp = 1.67262192e-24 # g .Proton mass
@@ -52,6 +52,7 @@ class AtDat():
         self.Zbar_min = Zbar_min
         self.nmax = nmax
         self.exc_list = exc_list
+        self.fn = None # Directory of More 1982 Screening Coefficients
         
         ##### Initialize data structures #####
         # Dict of dict of dict: En['up' or'lo'][Zbar][excitation degree]
@@ -69,7 +70,7 @@ class AtDat():
                                'L':[]}
                         
     def get_atomicdata(self, DIR='complexes/', nllo=[1,0], nlup=[2,1], 
-                       pop_method='file', vb=False):
+                       pop_method='file', vb=False, fn=None):
         ''' Calculates atomic data for each excited complex in given directory.
         
         Screened Hydrogenic model is run for each complex.
@@ -160,7 +161,8 @@ class AtDat():
                             Etotx.append(np.nan)
                             continue # Skip if string is empty. Only occurs for M-shell ground states
                         # Get energy levels from Average Ion for each configuration
-                        sh = AvIon(self.Z, Zbar=(self.Z-Nele), nmax=self.nmax)      
+                        sh = AvIon(self.Z, Zbar=(self.Z-Nele), nmax=self.nmax,
+                                   fn=self.fn)      
         
                         sh.Pn = Pni # Pass Pn manually for this configuration
                         sh.get_Qn()
@@ -1323,7 +1325,7 @@ class AtDat():
                 
 def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list, 
                               KT, NE, rho_grid, IPD,
-                              pf=0):
+                              pf=0, fn=None:):
     ''' Calculates shift of satellite centroid with respect to T=0 parent transition.
     
     Z : int
@@ -1348,6 +1350,8 @@ def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list,
         NE electron density values (not rho_grid mass densities).
     pf : bool
         Option to plot shift.
+    fn : str
+        Directory of More 1982 Screening Coefficients.
     
 
     Returns
