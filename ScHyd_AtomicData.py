@@ -52,7 +52,7 @@ class AtDat():
         self.Zbar_min = Zbar_min
         self.nmax = nmax
         self.exc_list = exc_list
-        self.fn = None # Directory of More 1982 Screening Coefficients
+        self.fn = fn # Directory of More 1982 Screening Coefficients
         
         ##### Initialize data structures #####
         # Dict of dict of dict: En['up' or'lo'][Zbar][excitation degree]
