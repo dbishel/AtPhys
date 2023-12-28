@@ -1386,7 +1386,7 @@ def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list,
     # IPD = 0
 
     # Run model
-    ad = AtDat(Z, A, Zmin, nmax, exc_list)
+    ad = AtDat(Z, A, Zmin, nmax, exc_list, fn=fn)
     ad.get_atomicdata(vb=0,  pop_method='inline')
     ad.get_hnu(np.array(ad.Zkeys).astype(int))
     ad.tidy_arrays()
