@@ -1394,7 +1394,7 @@ def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list,
     ad.tidy_arrays()
         
     # Run Saha-Boltzmann
-    ad.saha_boltzmann(KT, NE, IPD=IPD) # NE-indexed
+    ad.saha_boltzmann(KT, NE, IPD=IPD, fn_screening=fn) # NE-indexed
     ad.saha_boltzmann_rho(rho_grid) # rho_grid-indexed
     
     # Get oscillator strengths
