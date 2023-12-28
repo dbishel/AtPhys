@@ -1325,7 +1325,7 @@ class AtDat():
                 
 def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list, 
                               KT, NE, rho_grid, IPD,
-                              pf=0, fn=None:):
+                              pf=0, fn=None):
     ''' Calculates shift of satellite centroid with respect to T=0 parent transition.
     
     Z : int
