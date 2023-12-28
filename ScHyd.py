@@ -31,7 +31,7 @@ class AvIon():
         
         To-do: add radiative properties
     '''
-    def __init__(self, Z, Zbar, A=None, nmax=10):
+    def __init__(self, Z, Zbar, A=None, nmax=10, fn=None):
         
         # Constants - lengths in cm, masses in grams, energies in J
         self.a0 = 5.291772e-09 # Bohr radius, cm
@@ -50,8 +50,10 @@ class AvIon():
         self.n = np.arange(1,nmax+1) # Define number of shells considered
     
         # Load screening coefficients
-        fn = '/Users/dbis/Documents/More1982_ScreeningCoeff.xlsx'
-        sc = pd.read_excel('/Users/dbis/Documents/More1982_ScreeningCoeff.xlsx',
+        if fn is None:
+            fn = '/Users/dbis/Documents/More1982_ScreeningCoeff.xlsx'
+        
+        sc = pd.read_excel(fn,
                            skiprows=1, nrows=10, usecols=np.arange(11), header=None, index_col=0)
         sc = sc.values
         #print(sc)
