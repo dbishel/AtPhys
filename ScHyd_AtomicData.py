@@ -31,14 +31,14 @@ from copy import deepcopy
 from ScHyd import get_ionization, AvIon
 from saha_boltzmann_populations import saha, boltzmann
 
-sys.path.append('../FAC')
+sys.path.append('FAC')
 from fac_write_configs import generate_complexes
 
 
 
 class AtDat():
     
-    def __init__(self, Z, A, Zbar_min=0, nmax=5, exc_list=[0,1]):
+    def __init__(self, Z, A, Zbar_min=0, nmax=5, exc_list=[0,1], fn=None):
         
         ##### Constants #####
         self.mp = 1.67262192e-24 # g .Proton mass
@@ -52,6 +52,7 @@ class AtDat():
         self.Zbar_min = Zbar_min
         self.nmax = nmax
         self.exc_list = exc_list
+        self.fn = fn # Directory of More 1982 Screening Coefficients
         
         ##### Initialize data structures #####
         # Dict of dict of dict: En['up' or'lo'][Zbar][excitation degree]
@@ -69,7 +70,7 @@ class AtDat():
                                'L':[]}
                         
     def get_atomicdata(self, DIR='complexes/', nllo=[1,0], nlup=[2,1], 
-                       pop_method='file', vb=False):
+                       pop_method='file', vb=False, fn=None):
         ''' Calculates atomic data for each excited complex in given directory.
         
         Screened Hydrogenic model is run for each complex.
@@ -160,7 +161,8 @@ class AtDat():
                             Etotx.append(np.nan)
                             continue # Skip if string is empty. Only occurs for M-shell ground states
                         # Get energy levels from Average Ion for each configuration
-                        sh = AvIon(self.Z, Zbar=(self.Z-Nele), nmax=self.nmax)      
+                        sh = AvIon(self.Z, Zbar=(self.Z-Nele), nmax=self.nmax,
+                                   fn=self.fn)      
         
                         sh.Pn = Pni # Pass Pn manually for this configuration
                         sh.get_Qn()
@@ -294,7 +296,7 @@ class AtDat():
 
         return
     
-    def saha_boltzmann(self, KT, NE, IPD=0):
+    def saha_boltzmann(self, KT, NE, IPD=0, fn_screening=None):
         ''' Calculates Saha-Boltzmann balance using atomic data (energies, statweights)
         of the lower state. In future could include up/lo as an argument to allow user the choice
         at run time
@@ -308,6 +310,8 @@ class AtDat():
             Electron density, cm^-3.
         IPD : TYPE, optional
             Ionizaiton potential depression. The default is 0.
+        fn_screening : str
+            More screening coefficients directory.
 
         Returns
         -------
@@ -322,7 +326,7 @@ class AtDat():
         self.NT = len(KT)
         self.Nn = len(NE)
         
-        Ip = get_ionization(self.Z, return_energy_levels=False)
+        Ip = get_ionization(self.Z, return_energy_levels=False, fn_screening=fn_screening)
         Ip = np.array([Ip[int(item)] for item in self.Zkeys])
         self.Ip = Ip
         
@@ -1321,13 +1325,136 @@ class AtDat():
                  
                  print('{0:5s} | {1:10.1f} | {2:10.2e} | {3:25s} | {4:25s} '.format(Zstr, self.hnuarrs[i,j], gf[i,j], lo_config, up_config))
                 
-            
+def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list, 
+                              KT, NE, rho_grid, IPD,
+                              pf=0, fn=None):
+    ''' Calculates shift of satellite centroid with respect to T=0 parent transition.
+    
+    Z : int
+        Nuclear charge
+    A : int
+        Atomic mass number
+    Zmin : int
+        Minimum ionization state to include (0 = neutral)
+    nmax : int
+        Maximum principal quantum number to populate
+    exc_list : list
+        List of excitation degrees to include
+    KT : array
+        1-D array of temperatures, in eV. Used to evaluate Saha-Boltzmann balance
+    NE : array
+        1-D array of electron densities, in cm^-3. Used to evaluate Saha-Boltzmann balance
+    rho_gird : array
+        1-D array of mass densities, in g/cm^3. Used to evaluate Saha-Boltzmann balance as a function of density.
+        Need not align with NE.
+    IPD : float or array
+        Ionization potential depression, in eV. If 2-D array, must be shape [KT, NE] and evaluated for
+        NE electron density values (not rho_grid mass densities).
+    pf : bool
+        Option to plot shift.
+    fn : str
+        Directory of More 1982 Screening Coefficients.
+    
 
+    Returns
+    -------
+    shift : array
+        Shape [KT, NE, Nsatellite] array of the temperature- and density-dependent shift
+        of each satellite centroid from the parent transition at T=0.
+
+    '''            
+
+    # Inputs
+    # ZZ = 24 # Nuclear charge
+    # A = 51.996 # Nucleon number
+    
+    # Zbar_min = ZZ - 10
+    # nmax = 5 # Maximum allowed shell
+    # # exc_list = np.arange(2) # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+    # exc_list = [0,1,2] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+    # pf = 1
+    
+    # # Define T, Ne, rho grids for SB
+    # Nn, NT = 10, 51 # Number of density, temperature gridpoints
+    # KT = np.logspace(1,np.log10(2e3), num=NT) # eV, Temperature range, to find IPD
+    
+    # rho0 = np.logspace(-1,2, num=Nn) # g/cc
+    # Zbar0 = 20 # Estimated Zbar
+    # NE = rho0 / (A*ad.mp) * Zbar0 # 1/cm^3, Ne range
+    
+    # Nrho = 12
+    # rho_grid = np.logspace(-1,3, num=Nrho)
+
+    # IPD = 0
+
+    # Run model
+    ad = AtDat(Z, A, Zmin, nmax, exc_list, fn=fn)
+    ad.get_atomicdata(vb=0,  pop_method='inline')
+    ad.get_hnu(np.array(ad.Zkeys).astype(int))
+    ad.tidy_arrays()
         
+    # Run Saha-Boltzmann
+    ad.saha_boltzmann(KT, NE, IPD=IPD, fn_screening=fn) # NE-indexed
+    ad.saha_boltzmann_rho(rho_grid) # rho_grid-indexed
+    
+    # Get oscillator strengths
+    gf = ad.get_gf(1,0,2,1, return_gs=False)
+    
+    #### Average hnu
+    # Keep indexed to rho_grid throughout
+    # Averaged within an excitation degree
+    hnu_exc, pgf_exc = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization',
+                                 return_weight=True) # Shape: [excitation, NT, Nrho, ionization]
+    # Average within a satellite complex
+    # breakpoint()
+    hnu_sat, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
+                                      return_weight=True) # Shape: [NT, Nrho, satellite]
+
+    # Get Z indices corresponding to satellite ground-states
+    cond = [np.where(np.isin(ad.Zkeys,'{0:0.0f}'.format(ad.Z-z)))[0][0] for z in ad.sats]
+
+    # Calculate shift
+    shift = np.array([hnu_sat[:,:,i] - hnu_exc[0,:,:,c] for i,c in enumerate(cond)])  # Satellite average minus Parent. 
+    shift = np.moveaxis(shift, [0,1,2],[2,0,1]) # Shape [satellite, T, rho] -> [T,rho, satellite]
+
+    if pf:
+        rhoidx = 7
+        Tidxs = [np.where(KT<300)[0][-1],
+                 np.where(KT>400)[0][0]]
+
+        labs = ['Iso={0:0.0f}'.format(s) for s in ad.sats]
+        plt.figure(figsize=(4,3))
+        plt.plot(KT, shift[:,rhoidx,:], label=labs)
+        plt.gca().set(xlabel='kT (eV)',
+                  ylabel='dhnu (eV)',
+                  # xscale='log',
+                  title='{0:0.1f} g/cm$^3$, nmax={1:0.0f}, Iso max={2:d}'.format(rho_grid[rhoidx],
+                                                                                 ad.nmax,
+                                                                                 ad.Z-int(ad.Zkeys[0])),
+                    # xlim=[0,1100],
+                    # ylim=[-60,None]
+                  )
+        plt.legend()
+        
+        print('Shift for rho = {0:0.1f} g/cc'.format(rho_grid[rhoidx]))
+        print('{0:5s} | {1:10s} | {2:10s} | {3:10s}'.format('Iso',
+                                                            'T = {0:0.0f} eV'.format(KT[Tidxs[0]]),
+                                                            'T = {0:0.0f} eV'.format(KT[Tidxs[1]]),
+                                                            'Difference'))    
+
+        [print('{0:5d} | {1:10.1f} | {2:10.1f} | {3:10.1f}'.format(ad.sats[i], 
+                                                                   shift[Tidxs[0],rhoidx,i],
+                                                                   shift[Tidxs[1],rhoidx,i],
+                                                                   shift[Tidxs[1],rhoidx,i]-shift[Tidxs[0],rhoidx,i]))
+                 for i in range(len(ad.sats))];
+    return shift, ad
 
 # %% Main
 if __name__=='__main__':
         
+    
+    mp = 1.67262192e-24 # g. Proton mass
+    
     # ZZ = 26 # Nuclear charge
     # A = 55.845 # Nucleon number
     
@@ -1340,13 +1467,7 @@ if __name__=='__main__':
     # exc_list = [0,1] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
     pf = 1
     
-    # Run model
-    ad = AtDat(ZZ, A, Zbar_min, nmax, exc_list,)
-    ad.get_atomicdata(vb=0)
-    ad.get_hnu(np.array(ad.Zkeys).astype(int))
-    ad.tidy_arrays()
     
-    sys.exit()
     
     # Define T, Ne, rho grids for SB
     # Nn, NT = 10, 11 # Number of density, temperature gridpoints
@@ -1359,49 +1480,48 @@ if __name__=='__main__':
 
     rho0 = np.logspace(-1,2, num=Nn) # g/cc
     Zbar0 = 20 # Estimated dZbar
-    NE = rho0 / (A*ad.mp) * Zbar0 # 1/cm^3, Ne range
+    NE = rho0 / (mp) * Zbar0 # 1/cm^3, Ne range
     
     Nrho = 12
     rho_grid = np.logspace(-1,1, num=Nrho)
     
-    # Run Saha-Boltzmann
-    ad.saha_boltzmann(KT, NE, IPD=0)
-    ad.saha_boltzmann_rho(rho_grid)
+    sh, ad = calculate_boltzmann_shift(Z=ZZ, A=A, Zmin=Zbar_min, nmax=nmax, exc_list=exc_list,
+                                   KT=KT, NE=NE, rho_grid=rho_grid, IPD=0, pf=1)
     
-    # Generate spectra
-    # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'G')
-    ad.append_lineshape(3*np.ones(ad.pstate_rho.shape), 'G')
-    # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'L')
-    # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'L')
-    ad.sum_linewidths()
-    linecenter = ad.get_linecenter()
+    # # Generate spectra
+    # # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'G')
+    # ad.append_lineshape(3*np.ones(ad.pstate_rho.shape), 'G')
+    # # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'L')
+    # # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'L')
+    # ad.sum_linewidths()
+    # linecenter = ad.get_linecenter()
     
-    ad.get_line_opacity(1, 0, 2, 1)
+    # ad.get_line_opacity(1, 0, 2, 1)
     
-    hnu_minmax = [ad.hnuarrs.flatten()[ad.hnuarrs.flatten()>0].min(),
-                  ad.hnuarrs.max()]
-    hnu_axis = np.linspace(5400, 5800, num=2000)
-    # hnu_axis = np.linspace(6400, 6800, num=2000)
-    # hnu_axis = np.linspace(6665, 6680, num=1000)
-    # ls = ad.generate_lineshapes(hnu_axis)
+    # hnu_minmax = [ad.hnuarrs.flatten()[ad.hnuarrs.flatten()>0].min(),
+    #               ad.hnuarrs.max()]
+    # hnu_axis = np.linspace(5400, 5800, num=2000)
+    # # hnu_axis = np.linspace(6400, 6800, num=2000)
+    # # hnu_axis = np.linspace(6665, 6680, num=1000)
+    # # ls = ad.generate_lineshapes(hnu_axis)
     
-    # ad.generate_spectra(hnu_axis)
+    # # ad.generate_spectra(hnu_axis)
     
-    ad.print_table()
+    # ad.print_table()
     
-    # Gifs
-    gifT = np.arange(0,len(KT))
-    gifrho = np.ones(len(KT), dtype=int)*-1
+    # # Gifs
+    # gifT = np.arange(0,len(KT))
+    # gifrho = np.ones(len(KT), dtype=int)*-1
     
-    bins = np.arange(5400, 5800, 5)
-    # ad.gif_pops(Ts=gifT, rhos=gifrho, scale='log')
+    # bins = np.arange(5400, 5800, 5)
+    # # ad.gif_pops(Ts=gifT, rhos=gifrho, scale='log')
     
-    # f0 = mpl.rcParams['font.size']
-    # mpl.rcParams['font.size'] = 14
-    # ad.gif_pop_hist_bar(Ts=gifT, rhos=gifrho, bins=bins,
-    #                     ybds=[0,1],
-    #                     savename='./hist_bar_test.gif')
-    # mpl.rcParams['font.size'] = f0
+    # # f0 = mpl.rcParams['font.size']
+    # # mpl.rcParams['font.size'] = 14
+    # # ad.gif_pop_hist_bar(Ts=gifT, rhos=gifrho, bins=bins,
+    # #                     ybds=[0,1],
+    # #                     savename='./hist_bar_test.gif')
+    # # mpl.rcParams['font.size'] = f0
 
     
     if pf:
@@ -1444,6 +1564,8 @@ if __name__=='__main__':
                ylabel='Zbar',
                title='rho={0:0.1e} g/cm^3'.format(ad.rho_grid[rho_idx]))
         
+        sys.exit('here')
+
         # Plot opacity at one rho
         rhoidx = -1
         plt.figure(figsize=[4,3])
@@ -1457,7 +1579,6 @@ if __name__=='__main__':
                       )
         plt.colorbar()
 
-        sys.exit('here')
 
         # Plot opacity at one T - not constant due to changing state populations
         Tidx = NT//2 # Something in the middle

@@ -31,7 +31,7 @@ class AvIon():
         
         To-do: add radiative properties
     '''
-    def __init__(self, Z, Zbar, A=None, nmax=10):
+    def __init__(self, Z, Zbar, A=None, nmax=10, fn=None):
         
         # Constants - lengths in cm, masses in grams, energies in J
         self.a0 = 5.291772e-09 # Bohr radius, cm
@@ -50,8 +50,10 @@ class AvIon():
         self.n = np.arange(1,nmax+1) # Define number of shells considered
     
         # Load screening coefficients
-        fn = '/Users/dbis/Documents/More1982_ScreeningCoeff.xlsx'
-        sc = pd.read_excel('/Users/dbis/Documents/More1982_ScreeningCoeff.xlsx',
+        if fn is None:
+            fn = '/Users/dbis/Documents/More1982_ScreeningCoeff.xlsx'
+        
+        sc = pd.read_excel(fn,
                            skiprows=1, nrows=10, usecols=np.arange(11), header=None, index_col=0)
         sc = sc.values
         #print(sc)
@@ -346,7 +348,7 @@ class AvIon():
         return
         
 
-def get_ionization(Z, return_energy_levels=False):
+def get_ionization(Z, return_energy_levels=False, fn_screening=None):
     ''' Calculates ionization potential for isolated atoms.
     '''
     
@@ -354,7 +356,7 @@ def get_ionization(Z, return_energy_levels=False):
     En = []
     
     for Zbar in range(Z+1):
-        sh = AvIon(Z,Zbar)
+        sh = AvIon(Z,Zbar, fn=fn_screening)
 
         sh.get_Pn()
         sh.get_Qn()
@@ -371,7 +373,7 @@ def get_ionization(Z, return_energy_levels=False):
 
 def dense_plasma(Z,Zbar,A,Ts, rhos, nmax=10, iter_scheme='123', step=[0.5,0.5,0.5],
                  CL='IS Atzeni',
-                 vb=0, pf=1, return_last=False,):
+                 vb=0, pf=1, return_last=False, fn=None):
     ''' Calculates Zbar for a plasma along the given temperatures and densities.
         Iteration and convergence options are available.
 
@@ -410,6 +412,8 @@ def dense_plasma(Z,Zbar,A,Ts, rhos, nmax=10, iter_scheme='123', step=[0.5,0.5,0.
         Plot flag. If True, plots Zbar.
     return_last : bool
         If True, return last instance of AvIon object. Corresponds to Ts[-1], rhos[-1]
+    fn : str
+        Directory location of the 1982 More Screening Coefficients file.
 
     Returns
     -------
@@ -456,7 +460,7 @@ def dense_plasma(Z,Zbar,A,Ts, rhos, nmax=10, iter_scheme='123', step=[0.5,0.5,0.
         # print(Tidx,rhoidx, kT,rho)
         
         # Initialize with isolated atom
-        dp = AvIon(Z=Z, Zbar=Zbar, A=A, nmax=nmax)
+        dp = AvIon(Z=Z, Zbar=Zbar, A=A, nmax=nmax, fn=fn)
         dp.get_Pn()
         dp.get_Qn()
         dp.get_Wn()
