@@ -508,6 +508,113 @@ class AtDat():
         self.lineshape_tot = {'G': gau_width,
                               'L': lor_width}
     
+    def shell_configs(self, n, Pn):
+        ''' Constructs all subshell configurations for the shell n with number of electrons
+            Pn.
+        
+        Parameters
+        ----------
+        n : int
+            Shell
+        Pn : int
+            Number of electrons
+            
+        Returns
+        -------
+        Pl : array
+            2D array of shape [N configs, n] carrying the valid subshell populations.
+            Columns give the s, p, d, ... orbital populations, respectively.
+        '''
+
+        lmax = n-1
+        
+        Pl_loop = np.zeros(shape=[1,lmax+1]).astype(int)
+        
+        # Extend valid populations one subshell at a time
+        for l in range(0,lmax + 1):
+            Pl_next = [] # Reset for next loop
+            for Pl in Pl_loop:
+                assign = int(Pl.sum()) # Electrons assigned to lesser l
+                remain = Pn-assign # Electrons remaining to assign
+                vacant = np.sum([4*louter + 2
+                                for louter in range(l+1, lmax+1)]).astype(int) # Vacancies available in outer shell
+                
+                pops = [item for item in range(max(0, remain-vacant), # Must assign electrons
+                                               min(4*l+2, remain)+1)] # But cannot exceed subshell occupation
+                for p in pops:
+                    tmp = 1*Pl
+                    tmp[l] = p
+                    Pl_next.append(tmp) # Keep each appended population
+            Pl_loop = Pl_next # Set to loop over new populations
+        
+        Pl_loop = np.array(Pl_loop)
+        return Pl_loop
+
+    def atom_configs(self, Pn):
+        ''' Constructs all valid configurations for the complex with shells populated
+            according to Pn
+        
+
+        Parameters
+        ----------
+        Pn : list
+            Population of each shell for the given complex.
+
+        Returns
+        -------
+        None.
+
+        '''
+        
+        Pl = [] # Valid configurations for each shell
+        for n, pop in enumerate(Pn):
+            n += 1 # Increase zero-indexing to shells starting at 1
+            Pl.append(self.shell_configs(n=n, Pn=pop)) # Keep valid subshell pops for current shell
+
+        count = 0
+        ncfg = np.prod([len(item) for item in Pl]) # Number of configurations for total atom
+
+        # Create array of configurations to be accessed as Pnl[configuration, n, l]
+        # Each configuration is a 2D array with upper triangle = 0
+        Pnl = np.zeros(shape=[ncfg, len(Pn), len(Pn)]).astype(int) # Shape: configs, max subshell, max subshell
+
+        # Each combination of shell configurations is valid. Loop over these
+        for i,tmp in enumerate(zip(it.product(*Pl))):
+            for j,pop in enumerate(tmp[0]):
+                Pnl[i,j,:] = np.pad(pop, pad_width=(0,len(Pn) - (j+1)), mode='constant',
+                                       constant_values=0.)
+        return Pnl
+
+
+    def cfg_str(self, Pnl):
+        ''' Constructs the configuration string from the Pnl matrix.
+        
+
+        Parameters
+        ----------
+        Pnl : array
+            2-D array of the population Pnl[n-1,l] for each nl orbital of a single
+            configuration.
+
+        Returns
+        -------
+        cstr : str
+            String denoting the configuration, e.g, 1s^2 2s^1 ... .
+
+        '''
+        
+        tmp = []
+        lstr = ['s','p','d','f','g','h']
+        
+        sh = Pnl.shape
+        n,l = np.unravel_index(np.arange(np.prod(sh)), sh)
+        
+        tmp = ['{0:d}{1:s}^{2:d}'.format(ni+1, lstr[li], pi)
+               for i,[pi,ni,li] in enumerate(zip(Pnl.flatten(), n, l))
+               if pi>0]
+        cstr = ' '.join(tmp)
+        return cstr
+
     def get_linecenter(self, method='pseudo'):
         ''' Returns the value (1/eV) at line center of each normalized lineshape.
             Widths must be in eV and cannot be 0
@@ -535,12 +642,14 @@ class AtDat():
                      nj=None, lj=None,
                      return_gs=False,
                      ):
-        ''' Calculates weighted oscillator strength, averaged over lower states i
-            and summed over final states j.
+        ''' Calculates weighted oscillator strength, for the entire complex.
+        The complex gf is the sum of (gf of constituent configurations).
+        
+        Multi-electron oscilator strengths are evaluated for each configuration (nl)
+        consistent with each complex. These are then weighted by the configuration's
+        stat weight, and summed to obtain the total complex gf
             
-            Corrected for states which don't allow transition.
-            
-            By default, upper/lower states specified in get_atomicdata are used.
+        By default, upper/lower states specified in get_atomicdata are used.
         
 
         Parameters
@@ -557,7 +666,7 @@ class AtDat():
         Returns
         -------
         gf : array
-            Array of weighted oscillator strengths.
+            Array of weighted oscillator strengths, one for each complex
 
         '''
         if ni is None:
@@ -582,58 +691,82 @@ class AtDat():
                }
         fH = fH_dict['{0:d}{1:d}'.format(ni, li)]['{0:d}{1:d}'.format(nj, lj)]
         
-        # Weight osc. str. pre-factor over configurations which actually allow the transition
-        # 12/08/23 – start with shell-resolved g in self.gtot_lists, and subtract
-        # the number of states which don't allow the transition.
-        gi0 = self.gtot_lists['lo'] # Lower state. Shape: [Number charge states, max_length]
-        gj0 = self.gtot_lists['up']
-        
-        # Create copies
-        gi = 1*gi0.astype(int)
-        gj = 1*gj0.astype(int)
-
-        # Remove states which will not allow transition from the relevant shell's statweight.
-        #  Because only shell populations are specified, some configurations are not allowed.
-        # Ex: Pn=6 can have a full 2p orbital, which won't allow 1s-2p
-        
-        # Lower state (lo), upper orbital (nj,lj): upper orbital must have 1 vacancy.
-        # Subtract states with full occupancy in upper orbital
-        #     (vacancy required for transition to occur)
-        # Only applicable if Pn >= 2(2l+1)
-        pop = self.Pnarrs['lo'][Ellipsis,nj-1]
-        cond = (pop >= 2*(2*lj+1)) # Possible violation of vacancy condition if population is large enough
-        gi[cond,nj-1] = gi[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
-                                              pop[cond] - 2*(2*lj + 1))
-        
-        # Lower state (lo), lower orbital (ni,li): configurations must have at least one occupancy
-        # Subtract states with full vacancy in lower orbital
-        # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
-        pop = self.Pnarrs['lo'][Ellipsis,ni-1]
-        cond = (pop > 0) * (pop <= (2*ni**2 - 2*(2*li+1)) ) # Possible violation of occupancy condition if population is small enough
-        gi[cond,ni-1] = gi[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
-                                              pop[cond])
-
-        # Upper state (up), upper orbital (nj,lj): configurations which have unocuppied upper orbital
-        #     (At least 1 occupancy required for transition to have occurred)
-        # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
-        pop = self.Pnarrs['up'][Ellipsis,nj-1]
-        cond = (pop > 0) * (pop <= (2*nj**2 - 2*(2*lj+1)) ) # 
-        gj[cond,nj-1] = gj[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
-                                              pop[cond])
-        
-        # Upper state (up) lower orbital (ni,li): configs must have at least one vacancy
-        # Subtract states with full occupancy in lower orbital
-        pop = self.Pnarrs['up'][Ellipsis,ni-1]
-        cond = (pop >= 2*(2*li+1)) # Possible violation of vacancy condition if population is large enough
-        gj[cond,ni-1] = gj[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
-                                              pop[cond] - 2*(2*li + 1))
-
-        # Having removed invalid states from shells, construct total configuration statweights
-        gi = np.prod(gi, axis=-1)
-        gj = np.prod(gj, axis=-1)
-        
-        # Construct weighted oscillator strength by summing over initial statweight
-        gf = gi * fH
+        if 0: # OLD VERSION        
+            # Weight osc. str. pre-factor over configurations which actually allow the transition
+            # 12/08/23 – start with shell-resolved g in self.gtot_lists, and subtract
+            # the number of states which don't allow the transition.
+            gi0 = self.gtot_lists['lo'] # Lower state. Shape: [Number charge states, max_length]
+            gj0 = self.gtot_lists['up']
+            
+            # Create copies
+            gi = 1*gi0.astype(int)
+            gj = 1*gj0.astype(int)
+    
+            # Remove states which will not allow transition from the relevant shell's statweight.
+            #  Because only shell populations are specified, some configurations are not allowed.
+            # Ex: Pn=6 can have a full 2p orbital, which won't allow 1s-2p
+            
+            # Lower state (lo), upper orbital (nj,lj): upper orbital must have 1 vacancy.
+            # Subtract states with full occupancy in upper orbital
+            #     (vacancy required for transition to occur)
+            # Only applicable if Pn >= 2(2l+1)
+            pop = self.Pnarrs['lo'][Ellipsis,nj-1]
+            cond = (pop >= 2*(2*lj+1)) # Possible violation of vacancy condition if population is large enough
+            gi[cond,nj-1] = gi[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
+                                                  pop[cond] - 2*(2*lj + 1))
+            
+            # Lower state (lo), lower orbital (ni,li): configurations must have at least one occupancy
+            # Subtract states with full vacancy in lower orbital
+            # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
+            pop = self.Pnarrs['lo'][Ellipsis,ni-1]
+            cond = (pop > 0) * (pop <= (2*ni**2 - 2*(2*li+1)) ) # Possible violation of occupancy condition if population is small enough
+            gi[cond,ni-1] = gi[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
+                                                  pop[cond])
+    
+            # Upper state (up), upper orbital (nj,lj): configurations which have unocuppied upper orbital
+            #     (At least 1 occupancy required for transition to have occurred)
+            # Only applicable if 0 < Pn <= 2n^2 - 2(2l+1)
+            pop = self.Pnarrs['up'][Ellipsis,nj-1]
+            cond = (pop > 0) * (pop <= (2*nj**2 - 2*(2*lj+1)) ) # 
+            gj[cond,nj-1] = gj[cond, nj-1] - comb(2*nj**2 - 2*(2*lj + 1),
+                                                  pop[cond])
+            
+            # Upper state (up) lower orbital (ni,li): configs must have at least one vacancy
+            # Subtract states with full occupancy in lower orbital
+            pop = self.Pnarrs['up'][Ellipsis,ni-1]
+            cond = (pop >= 2*(2*li+1)) # Possible violation of vacancy condition if population is large enough
+            gj[cond,ni-1] = gj[cond, ni-1] - comb(2*ni**2 - 2*(2*li + 1),
+                                                  pop[cond] - 2*(2*li + 1))
+    
+            # Having removed invalid states from shells, construct total configuration statweights
+            gi = np.prod(gi, axis=-1)
+            gj = np.prod(gj, axis=-1)
+            
+            # Construct weighted oscillator strength by summing over initial statweight
+            gfold = gi * fH
+            
+        else: # NEw VERSION
+            # For each complex, construct all configurations
+            gf = np.zeros(shape=self.Pnarrs['lo'].shape[:2])
+            for i,j in it.product(range(gf.shape[0]), range(gf.shape[1])):
+                cfg = self.atom_configs(self.Pnarrs['lo'][i,j]) # Subshell populations. Indexed as [config, n+1, l]
+                
+                # Lower level statweight
+                # Unphysical (l>=n) or unpopulated subshells receive a statweight g=1
+                # The total g is a product over subshells, so including these with g=1
+                # does not affect the total g
+                larr = np.arange(cfg.shape[-1]) # Array denoting angular momentum number
+                gsub = comb(4*larr[np.newaxis,np.newaxis,:]+2, cfg) # Statweight of each subshell of each configuration
+                gcfg = gsub.prod(axis=-1).prod(axis=-1) # Statweight of each configuration. Product over n and l
+                
+                # Multielectron oscillator strength = fH * (initial population of initial level)
+                #           * (probability that upper level is filled in initial state)
+                # Note: nidx = n-1
+                fmulti = fH * cfg[:,ni-1,li] \
+                            * (4*larr[lj] + 2 - cfg[:,nj-1,lj])/(4*larr[lj] + 2)
+                            
+                # The gf corresponding to this complex is the sum over all constituent configuraitons
+                gf[i,j] = np.sum(gcfg * fmulti)
                     
         if return_gs:
             return gf, gi, gj
@@ -758,19 +891,23 @@ class AtDat():
         '''
         linecenter = self.get_linecenter() # 1/eV. Value of normalized line shape at line center. Used in xsec
         
-        # Get weighted oscillator strength, ignoring states that don't allow transition
+        # Get weighted oscillator strength, summed over all configurations within each complex
         gf = self.get_gf(ni, li, nj, lj)
         
         # Calculate cross-section of each transition. See Perez-Callejo JQSRT 202
         xsec = (2.6553e-06 / 2.41799e14) * gf * 1e4 # cm^2 eV. Prefactor = (e^2 / (4 epsilon_0) / me / c) * (eV/Hz) in mks
         
-        # "State" population is fractional population * Ntot, on rho_grid
+        # Complex population is fractional population * Ntot, on rho_grid
         # Note: pstate_rho is shape [T, rho, Zbar, complex]
-        Ni = self.rho_grid / (self.A * self.mp) # cm^-3, ion density
+        # Ni = self.rho_grid / (self.A * self.mp) # cm^-3, ion density
                     
+        # Convert intiial complex population to state population by dividing by total statweight of complex
+        gcomplex = np.prod(self.gtot_lists['lo'], axis=-1)
+        cpop = self.pstate_rho / gcomplex
+        
         # Calculate opacity
         self.kappa_line = xsec * 1/(self.A * self.mp) \
-                        * self.pstate_rho * linecenter # cm^2 / g
+                        * cpop * linecenter # cm^2 / g. Indpendent of density, as required by definition
         
         # Opacity [cm^-1] at line center. Correct, but unused.
         # alpha_line = xsec * Ni[np.newaxis,:,np.newaxis,np.newaxis] \

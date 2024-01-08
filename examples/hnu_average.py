@@ -30,10 +30,10 @@ DIR = '../complexes/'
 ZZ = 24 # Nuclear charge
 A = 51.996 # Nucleon number
 
-Zbar_min = ZZ - 11
+Zbar_min = ZZ - 10
 nmax = 3 # Maximum allowed shell
-exc_list = np.arange(8) # Excitation degrees to consider (lower state is ground state, singly excited, ...)
-# exc_list = [0,1,2,] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+# exc_list = np.arange(8) # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+exc_list = [0,1,2,] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
 pf = 1
 
 # Run model
@@ -187,7 +187,7 @@ print('Sum over state populations + population of bare ion != 1:')
 print('    ', np.where(abs(ad.pstate.sum(-1).sum(-1)+ad.psaha[:,:,-1]-1)>1e-2))
 
 # View populations within 1 ionization state
-Tidx = -1
+Tidx = 30
 rhoidx = 5
 zidx = 3
 print()
