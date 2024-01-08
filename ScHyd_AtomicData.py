@@ -1539,13 +1539,16 @@ def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list,
     gf = ad.get_gf(1,0,2,1, return_gs=False)
     
     #### Average hnu
+    # Calculate total statweight, to reduce complex population to state population
+    gtot = np.prod(ad.gtot_lists['lo'], axis=-1)
+    
     # Keep indexed to rho_grid throughout
     # Averaged within an excitation degree
-    hnu_exc, pgf_exc = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization',
+    hnu_exc, pgf_exc = ad.get_hnu_average(ad.pstate_rho/gtot[Ellipsis], gf=gf, resolve='ionization',
                                  return_weight=True) # Shape: [excitation, NT, Nrho, ionization]
     # Average within a satellite complex
     # breakpoint()
-    hnu_sat, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
+    hnu_sat, pgf = ad.get_hnu_average(ad.pstate_rho/gtot[Ellipsis], gf=gf, resolve='line',
                                       return_weight=True) # Shape: [NT, Nrho, satellite]
 
     # Get Z indices corresponding to satellite ground-states
