@@ -781,7 +781,8 @@ class AtDat():
         Parameters
         ----------
         pops : array
-            Shape (NT,Nrho, ionization, Nconfig) array of populations.
+            Shape (NT,Nrho, ionization, Nconfig) array of state populations.
+            i.e. pstate / prod(gtot)
         gf : array
             Shape (ionization, Nconfig) array of weighted oscillator strengths.
         uplo : str, optional
