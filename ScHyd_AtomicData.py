@@ -801,7 +801,7 @@ class AtDat():
         -------
         hnu_avg : array
             Array of line centers.n
-            - If 'ionization', shape (NT, Nrho, ionization, Nconfig) 
+            - If 'ionization', shape (NT, Nrho, ionization, len(exc_list)) 
             - If 'line', shape (NT, Nrho, ionization), one for each line complex
 
         '''
@@ -1545,7 +1545,7 @@ def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list,
     # Keep indexed to rho_grid throughout
     # Averaged within an excitation degree
     hnu_exc, pgf_exc = ad.get_hnu_average(ad.pstate_rho/gtot[Ellipsis], gf=gf, resolve='ionization',
-                                 return_weight=True) # Shape: [NT, Nrho, ionization, state]
+                                 return_weight=True) # Shape: [NT, Nrho, ionization, excitation]
     # Average within a satellite complex
     # breakpoint()
     hnu_sat, pgf = ad.get_hnu_average(ad.pstate_rho/gtot[Ellipsis], gf=gf, resolve='line',
@@ -1626,6 +1626,7 @@ if __name__=='__main__':
     Nrho = 12
     rho_grid = np.logspace(-1,1, num=Nrho)
     
+    breakpoint()
     sh, ad = calculate_boltzmann_shift(Z=ZZ, A=A, Zmin=Zbar_min, nmax=nmax, exc_list=exc_list,
                                    KT=KT, NE=NE, rho_grid=rho_grid, IPD=0, pf=1)
     
