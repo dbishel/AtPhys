@@ -1545,7 +1545,7 @@ def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list,
     # Keep indexed to rho_grid throughout
     # Averaged within an excitation degree
     hnu_exc, pgf_exc = ad.get_hnu_average(ad.pstate_rho/gtot[Ellipsis], gf=gf, resolve='ionization',
-                                 return_weight=True) # Shape: [excitation, NT, Nrho, ionization]
+                                 return_weight=True) # Shape: [NT, Nrho, ionization, state]
     # Average within a satellite complex
     # breakpoint()
     hnu_sat, pgf = ad.get_hnu_average(ad.pstate_rho/gtot[Ellipsis], gf=gf, resolve='line',
@@ -1555,7 +1555,7 @@ def calculate_boltzmann_shift(Z, A, Zmin, nmax, exc_list,
     cond = [np.where(np.isin(ad.Zkeys,'{0:0.0f}'.format(ad.Z-z)))[0][0] for z in ad.sats]
 
     # Calculate shift
-    shift = np.array([hnu_sat[:,:,i] - hnu_exc[0,:,:,c] for i,c in enumerate(cond)])  # Satellite average minus Parent. 
+    shift = np.array([hnu_sat[:,:,i] - hnu_exc[:,:,c,0] for i,c in enumerate(cond)])  # Satellite average minus Parent. 
     shift = np.moveaxis(shift, [0,1,2],[2,0,1]) # Shape [satellite, T, rho] -> [T,rho, satellite]
 
     if pf:
@@ -1629,6 +1629,7 @@ if __name__=='__main__':
     sh, ad = calculate_boltzmann_shift(Z=ZZ, A=A, Zmin=Zbar_min, nmax=nmax, exc_list=exc_list,
                                    KT=KT, NE=NE, rho_grid=rho_grid, IPD=0, pf=1)
     
+    sys.exit()
     # # Generate spectra
     # # ad.append_lineshape(np.ones(ad.pstate_rho.shape), 'G')
     # ad.append_lineshape(3*np.ones(ad.pstate_rho.shape), 'G')
