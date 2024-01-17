@@ -847,8 +847,8 @@ class AtDat():
                 hnu_avg.append(tmp_hnu)
                 pgf.append(tmp_pgf)
                 
-            hnu_avg = np.array(hnu_avg)
-            pgf = np.array(pgf)
+            hnu_avg = np.moveaxis(hnu_avg, [0,1,2,3,],[3,0,1,2]) # Shape [ Nt, Nrho, ionization, state]
+            pgf = np.moveaxis(pgf, [0,1,2,3,],[3,0,1,2]) # Shape [ Nt, Nrho, ionization, state]
             
         elif resolve=='line':
             # Return line-complex resolved line centers
