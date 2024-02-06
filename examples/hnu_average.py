@@ -19,7 +19,7 @@ import os                       # Used to e.g. change directory
 import sys                      # Used to put breaks/exits for debugging
 import re
 
-sys.path.append('../')
+sys.path.append('../FAC/')
 from ScHyd import get_ionization, AvIon, dense_plasma
 from saha_boltzmann_populations import saha, boltzmann
 from ScHyd_AtomicData import AtDat
@@ -30,10 +30,10 @@ DIR = '../complexes/'
 ZZ = 24 # Nuclear charge
 A = 51.996 # Nucleon number
 
-Zbar_min = ZZ - 11
-nmax = 3 # Maximum allowed shell
-exc_list = np.arange(8) # Excitation degrees to consider (lower state is ground state, singly excited, ...)
-# exc_list = [0,1,2,] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+Zbar_min = ZZ - 10
+nmax = 5 # Maximum allowed shell
+# exc_list = np.arange(8) # Excitation degrees to consider (lower state is ground state, singly excited, ...)
+exc_list = [0,1,2,3] # Excitation degrees to consider (lower state is ground state, singly excited, ...)
 pf = 1
 
 # Run model
@@ -106,7 +106,6 @@ if 0:
                   title='ScHyd Zbar')
     plt.colorbar(im, ax=ax)
 
-
 # %% Populations and gf
 # Run Saha-Boltzmann
 ad.saha_boltzmann(KT, NE, IPD=CLgrid) # NE-indexed
@@ -142,15 +141,16 @@ if 0:
 
 # Get oscillator strengths
 gf = ad.get_gf(1,0,2,1, return_gs=False)
+gtot = ad.gtot_lists['lo'].prod(axis=-1)
 
 #### Average hnu
 # Keep indexed to rho_grid throughout
 # Averaged within an excitation degree
-hnu_exc, pgf_exc = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='ionization',
+hnu_exc, pgf_exc = ad.get_hnu_average(ad.pstate_rho/gtot[Ellipsis], gf=gf, resolve='ionization',
                              return_weight=True) # Shape: [excitation, NT, Nrho, ionization]
 # Average within a satellite complex
 # breakpoint()
-hnu_sat, pgf = ad.get_hnu_average(ad.pstate_rho, gf=gf, resolve='line',
+hnu_sat, pgf = ad.get_hnu_average(ad.pstate_rho/gtot[Ellipsis], gf=gf, resolve='line',
                                   return_weight=True) # Shape: [NT, Nrho, satellite]
 
 # %% Opacity
@@ -170,6 +170,14 @@ if 1:
     
     ad.generate_spectra(hnu_axis)
     
+    plt.figure(figsize=[4,3])
+    plt.pcolormesh(KT, hnu_axis, ad.kappa[:,7].T, shading='nearest',)
+    plt.gca().set(xlabel='kT (eV)',
+                  ylabel=r'h$\nu$ (eV)',
+                  title=r'$\kappa$ (cm$^2$/g)')
+    
+    plt.colorbar()
+    
     # ad.print_table() # broken
     
     # Gifs
@@ -187,7 +195,7 @@ print('Sum over state populations + population of bare ion != 1:')
 print('    ', np.where(abs(ad.pstate.sum(-1).sum(-1)+ad.psaha[:,:,-1]-1)>1e-2))
 
 # View populations within 1 ionization state
-Tidx = -1
+Tidx = 30
 rhoidx = 5
 zidx = 3
 print()
@@ -304,12 +312,14 @@ pgf_exc_n = []
 
 for adn in ad_list:
     gfn = adn.get_gf(1,0,2,1, return_gs=False)
-    tmp = adn.get_hnu_average(adn.pstate_rho, gf=gfn, resolve='line',
+    gtotn = adn.gtot_lists['lo'].prod(axis=-1)
+    
+    tmp = adn.get_hnu_average(adn.pstate_rho/gtotn[Ellipsis], gf=gfn, resolve='line',
                                   return_weight=True)
     hnu_sat_n.append(tmp[0])
     pgf_n.append(tmp[1])
 
-    tmp = adn.get_hnu_average(adn.pstate_rho, gf=gfn, resolve='ionization',
+    tmp = adn.get_hnu_average(adn.pstate_rho/gtotn[Ellipsis], gf=gfn, resolve='ionization',
                                   return_weight=True)
     hnu_exc_n.append(tmp[0])
     pgf_exc_n.append(tmp[1])
@@ -603,14 +613,16 @@ for adn in [ad3,ad4,ad5]:
     
     # Shift
     gf = adn.get_gf(1,0,2,1, return_gs=False)
+    gtot = ad.gtot_lists['lo'].prod(axis=-1)
 
     # Keep indexed to rho_grid throughout
     # Averaged within an excitation degree
-    hnu_exc, pgf_exc = adn.get_hnu_average(adn.pstate_rho, gf=gf, resolve='ionization',
+    
+    hnu_exc, pgf_exc = adn.get_hnu_average(adn.pstate_rho/gtot[Ellipsis], gf=gf, resolve='ionization',
                                  return_weight=True) # Shape: [excitation, NT, Nrho, ionization]
     # Average within a satellite complex
     # breakpoint()
-    hnu_sat, pgf = adn.get_hnu_average(adn.pstate_rho, gf=gf, resolve='line',
+    hnu_sat, pgf = adn.get_hnu_average(adn.pstate_rho/gtot[Ellipsis], gf=gf, resolve='line',
                                       return_weight=True) # Shape: [NT, Nrho, satellite]
     
     # Get Z indices corresponding to satellite ground-states
